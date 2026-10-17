@@ -1,13 +1,13 @@
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'native_bridge.dart';
 
-/// FFmpeg 转码封装（使用 ffmpeg_kit_flutter）。
+/// FFmpeg 转码封装（使用 ffmpeg_kit_flutter_new）。
 class Mp4Converter {
   const Mp4Converter();
 
