@@ -218,6 +218,21 @@ class ContentRepo {
   // ---- 收藏 / 历史 --------------------------------------------------------
 
   Future<List<ContentItem>> favorites(ContentKind kind, {int pages = 1, int counts = 20}) async {
+    // 动漫 AV / NS 是两套独立的收藏列表（两套 id 空间）：合并去重后一并展示，
+    // 否则 NS 作品的收藏永远查不到（表现为「收藏了但列表里没有」）。
+    if (kind == ContentKind.animat) {
+      final results = await Future.wait([
+        _api.favorites(kind.tag, pages: pages, counts: counts, source: 'av'),
+        _api.favorites(kind.tag, pages: pages, counts: counts, source: 'ns'),
+      ]);
+      final merged = <String, ContentItem>{};
+      for (final res in results) {
+        for (final it in _parseItems(kind, res)) {
+          merged['${it.id}:${it.source ?? ''}'] = it;
+        }
+      }
+      return merged.values.toList();
+    }
     final res = await _api.favorites(kind.tag, pages: pages, counts: counts);
     return _parseItems(kind, res);
   }
@@ -227,11 +242,19 @@ class ContentRepo {
     return _parseItems(kind, res);
   }
 
-  Future<Object?> addFavorite(ContentKind kind, int id) =>
-      _api.addFavorite(kind.tag, id);
+  /// 收藏内容。动漫需传 [source]（`av`/`ns`），二者 id 空间不同。
+  Future<Object?> addFavorite(ContentKind kind, int id, {String? source}) async {
+    final res = await _api.addFavorite(kind.tag, id, source: source);
+    _ensureOk(res);
+    return res;
+  }
 
-  Future<Object?> removeFavorite(ContentKind kind, List<int> ids) =>
-      _api.removeFavorite(kind.tag, ids);
+  /// 取消收藏。动漫需传 [source]。
+  Future<Object?> removeFavorite(ContentKind kind, List<int> ids, {String? source}) async {
+    final res = await _api.removeFavorite(kind.tag, ids, source: source);
+    _ensureOk(res);
+    return res;
+  }
 
   Future<Object?> writeHistory(ContentKind kind, int id, {int? lastPage, double? percent}) =>
       _api.writeHistory(kind.tag, id, lastPage: lastPage, percent: percent);
@@ -244,6 +267,17 @@ class ContentRepo {
   List<ContentItem> _parseItems(ContentKind kind, Object? res) {
     final list = _asMapList(_asMap(res)['data'] ?? res);
     return list.map((e) => ContentItem.fromJson(kind, e)).toList();
+  }
+
+  /// 写操作（收藏/取消）的响应信封若含 `error` 则抛出，避免“静默失败”。
+  static void _ensureOk(Object? res) {
+    if (res is Map && res['error'] != null) {
+      throw ApiException(
+        -1,
+        extractApiMessage(res['error'], fallback: '操作失败'),
+        body: res,
+      );
+    }
   }
 
   static Map<String, dynamic> _asMap(Object? o) =>

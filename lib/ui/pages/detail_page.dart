@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
+import '../../core/network/api_exception.dart';
 import '../../data/models/content.dart';
 import '../../data/repo/content_repo.dart';
 import '../../data/service/download_task.dart';
@@ -47,6 +48,7 @@ class _DetailPageState extends State<DetailPage> {
             kind: widget.kind,
             id: widget.id,
             detail: detail,
+            source: widget.source,
             fallbackTitle: widget.title),
       ),
     );
@@ -58,12 +60,16 @@ class _Body extends StatefulWidget {
     required this.kind,
     required this.id,
     required this.detail,
+    this.source,
     this.fallbackTitle,
   });
 
   final ContentKind kind;
   final int id;
   final ContentDetail detail;
+
+  /// 列表页传入的 `source`（动漫 AV/NS 路由与收藏用）。
+  final String? source;
 
   /// 详情接口未回传标题时（如 `photoRead` 只给页表）用列表页传入的标题兜底。
   final String? fallbackTitle;
@@ -450,17 +456,43 @@ class _BodyState extends State<_Body> {
 
   // ---- 操作 ---------------------------------------------------------------
 
+  @override
+  void initState() {
+    super.initState();
+    _refreshFav();
+  }
+
+  /// 拉取收藏状态，使按钮初始态与实际一致（避免“点了没反应”）。
+  Future<void> _refreshFav() async {
+    try {
+      final repo = context.read<AppContainer>().contentRepo;
+      final items = await repo.favorites(widget.kind, counts: 50);
+      final src = widget.source ?? widget.detail.item.source;
+      final has = items.any((it) =>
+          it.id == widget.id &&
+          (widget.kind != ContentKind.animat || (it.source ?? '') == (src ?? '')));
+      if (mounted && has != _fav) setState(() => _fav = has);
+    } catch (_) {}
+  }
+
   Future<void> _toggleFav(ContentItem item) async {
     setState(() => _favBusy = true);
     try {
       final repo = context.read<AppContainer>().contentRepo;
+      // 动漫 AV / NS 两套 id 空间，收藏必须按 source 路由。
+      final source = widget.source ?? item.source;
       if (_fav) {
-        await repo.removeFavorite(widget.kind, [item.id]);
+        await repo.removeFavorite(widget.kind, [item.id], source: source);
       } else {
-        await repo.addFavorite(widget.kind, item.id);
+        await repo.addFavorite(widget.kind, item.id, source: source);
       }
+      if (!mounted) return;
       setState(() => _fav = !_fav);
-    } catch (_) {
+      _toast(_fav ? '已收藏' : '已取消收藏');
+    } catch (e) {
+      if (mounted) {
+        _toast(e is ApiException ? e.message : '操作失败：$e');
+      }
     } finally {
       if (mounted) setState(() => _favBusy = false);
     }

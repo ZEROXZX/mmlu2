@@ -360,8 +360,8 @@ class ApiService {
   /// 路径按种类区分：comicNs → `v3/comic/ns/favorite`，comicAv →
   /// `v3/comic/data/favorite`，其余 → `v2/{kind}/favorite`。
   /// （旧的 `v2/comic/favorite` 服务端已失效，返 500/502。）
-  Future<Object?> favorites(String kind, {int counts = 20, int pages = 1}) =>
-      _get(DomainType.apiData, _favoriteBase(kind),
+  Future<Object?> favorites(String kind, {int counts = 20, int pages = 1, String? source}) =>
+      _get(DomainType.apiData, _favoriteBase(kind, source),
           query: {'counts': counts, 'pages': pages});
 
   /// 历史列表。[range] 服务端要求 ≥1（0 → 400）。[kind] 同 [favorites]。
@@ -524,10 +524,15 @@ class ApiService {
   // ---- 12 收藏增删 / 历史增删 --------------------------------------------
 
   /// 收藏指定内容的路径（按内容种类区分不同的 v3 前缀）。
-  String _favoritePath(String kind, int id) {
+  ///
+  /// **动漫 AV / NS 是两套 id 空间**：NS（`source=='ns'`）必须走 `v3/nsanimat/favorite`，
+  /// 否则会写到 AV 的收藏里（同名 id 还可能串号）→ 表现为「收藏有概率无效」。
+  String _favoritePath(String kind, int id, [String? source]) {
     switch (kind) {
       case 'animat':
-        return Endpoints.animatFavoriteId(id);
+        return source == 'ns'
+            ? Endpoints.nsAnimatFavoriteId(id)
+            : Endpoints.animatFavoriteId(id);
       case 'comicNs':
         return Endpoints.comicNsFavoriteId(id);
       case 'comicAv':
@@ -539,8 +544,13 @@ class ApiService {
     }
   }
 
-  String _favoriteBase(String kind) {
+  String _favoriteBase(String kind, [String? source]) {
     switch (kind) {
+      case 'animat':
+        // AV → v2/animat/favorite；NS → v3/nsanimat/favorite。
+        return source == 'ns'
+            ? Endpoints.nsAnimatFavorite
+            : Endpoints.animatFavorite;
       case 'comicNs':
         return Endpoints.comicNsFavorite;
       case 'comicAv':
@@ -575,12 +585,13 @@ class ApiService {
     }
   }
 
-  Future<Object?> addFavorite(String kind, int id) =>
-      _put(DomainType.apiData, _favoritePath(kind, id));
+  Future<Object?> addFavorite(String kind, int id, {String? source}) =>
+      _put(DomainType.apiData, _favoritePath(kind, id, source));
 
-  Future<Object?> removeFavorite(String kind, List<int> ids) => _delete(
+  Future<Object?> removeFavorite(String kind, List<int> ids, {String? source}) =>
+      _delete(
         DomainType.apiData,
-        _favoriteBase(kind),
+        _favoriteBase(kind, source),
         query: {'ids': ids.join(',')},
       );
 

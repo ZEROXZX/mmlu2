@@ -432,6 +432,17 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 
 ---
 
+### 6m. 动漫收藏有概率无效 / 列表「更多」不会一直加载【fix12】
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 动漫点「收藏」有概率无效（列表里看不到、状态对不上） | 动漫 **AV / NS 是两套 id 空间**：`addFavorite` 恒写 `v2/animat/favorite`（AV），而首页/分类的动画列表走的是 `v3/nsanimat/*`（NS）；且收藏列表只读 AV → NS 收藏写错源、列表也查不到。加上写操作**忽略 200 错误信封**，失败也照样翻按钮 → “静默无效” | ① 收藏增删**按 `source` 路由**（`ns`→`v3/nsanimat/favorite`，否则 `v2/animat/favorite`）；② 动漫收藏列表**合并 AV+NS 并去重**；③ `ContentRepo._ensureOk` 检测 `{error}` 信封并抛 `ApiException`，UI 弹「操作失败」不再静默；④ 详情页进入时 `_refreshFav` 拉收藏状态，令按钮初始态与实际一致 |
+| 首页/分类点「更多」只显示一屏（约 20 条），下滑不再加载、来回都是那几条 | `ContentListPage` 一次性 `AsyncView` 拉一页，**无分页** | 重写为**滚动到底自动加载下一页**：`pages` 递增、按 `kind:id:source` 去重、本页不足或整页无新增即停止、首屏/追加失败分别给重试。首页与分类的「更多」均进入本页，故一并生效 |
+
+> 契约测试：`test/content_repo_animat_test.dart`（NS/AV 收藏路由、AV+NS 合并去重、error 信封抛 `ApiException`）。
+
+---
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
@@ -454,6 +465,8 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 图集/漫画点「复制链接」要等打包 zip，太麻烦 | fix9 把复制链接做成了即时打包 | §6l：复制链接**不再打包**，直接给全部图片网址 + 逐图 key/iv；要 zip 用「打包下载」按钮 |
 | 小说详情页有多余的空白图片区 | 小说无封面仍渲染占位图 | §6l：`_header` 对 fiction 不渲染图片区 |
 | 打开软件可直接使用、未强制授权 | 权限仅首帧后台静默申请 | §6l：`PermissionGate` 启动强制授权，未授权无法进入 |
+| 动漫点收藏“有概率无效” | 收藏未按 AV/NS 区分（两套 id 空间）+ 错误被静默吞掉 | §6m：按 `source` 路由（ns→`v3/nsanimat`），收藏列表合并 AV+NS，error 信封抛错 |
+| 首页/分类「更多」下滑不再加载 | `ContentListPage` 无分页 | §6m：滚动到底自动加载下一页（去重 / 到底停止 / 失败重试） |
 | 删下载记录连带删了本地文件 | 记录与文件未解耦 | §6k：只删记录，保留成品文件（`remove`/历史删除均不再 `deleteLocal`） |
 | 没有搜索历史 | 关键词未持久化 | §6k：`SearchHistoryStore`（无上限 + 逐条删/清空） |
 | 图集详情页预览图空白（但能浏览） | `photoRead` 只给页表、无 cover | §6k：用**首张图**当预览封面 + 标题用列表页兜底 |

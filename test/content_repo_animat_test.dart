@@ -18,6 +18,10 @@ class _FakeApi extends ApiService {
   Object? avResult;
   Object? photoResult;
 
+  final addCalls = <String>[];
+  Object? addResult;
+  final favBySource = <String, List<Map<String, dynamic>>>{};
+
   @override
   Future<Object?> photoRead({
     required int id,
@@ -28,6 +32,24 @@ class _FakeApi extends ApiService {
 
   @override
   Future<Object?> photoSimilar(int id) async => {'data': const []};
+
+  @override
+  Future<Object?> favorites(String kind,
+          {int counts = 20, int pages = 1, String? source}) async =>
+      {'data': favBySource['$kind:${source ?? ''}'] ?? const []};
+
+  @override
+  Future<Object?> addFavorite(String kind, int id, {String? source}) async {
+    addCalls.add('add:$kind:$id:${source ?? ''}');
+    return addResult;
+  }
+
+  @override
+  Future<Object?> removeFavorite(String kind, List<int> ids,
+      {String? source}) async {
+    addCalls.add('rm:$kind:${ids.join(",")}:${source ?? ''}');
+    return addResult;
+  }
 
   @override
   Future<Object?> nsAnimatDetail(int id) async {
@@ -147,6 +169,47 @@ void main() {
       expect(d.item.cover!.scheme, ImageScheme.perImage);
       expect(d.item.cover!.key, 'k1==');
       expect(d.item.cover!.iv, 'iv1==');
+    });
+  });
+
+  group('收藏（动漫按 source 路由 / AV+NS 合并 / 错误抛出）', () {
+    test('NS 作品收藏打到 ns 源，AV 作品打到 av 源', () async {
+      api.addResult = {'success': true};
+      await repo.addFavorite(ContentKind.animat, 7, source: 'ns');
+      await repo.addFavorite(ContentKind.animat, 8, source: 'av');
+      expect(api.addCalls, ['add:animat:7:ns', 'add:animat:8:av']);
+    });
+
+    test('取消收藏同样按 source 路由', () async {
+      api.addResult = {'success': true};
+      await repo.removeFavorite(ContentKind.animat, [7], source: 'ns');
+      expect(api.addCalls.single, 'rm:animat:7:ns');
+    });
+
+    test('动漫收藏列表合并 AV 与 NS 并去重', () async {
+      api.favBySource['animat:av'] = [
+        {'id': 1, 'name': 'AV作品', 'source': 'av'},
+        {'id': 2, 'name': 'AV作品2', 'source': 'av'},
+      ];
+      api.favBySource['animat:ns'] = [
+        {'id': 2, 'name': 'AV作品2', 'source': 'av'},
+        {'id': 9, 'name': 'NS作品', 'source': 'ns'},
+      ];
+
+      final list = await repo.favorites(ContentKind.animat);
+
+      expect(list.map((e) => '${e.id}:${e.source}').toSet(),
+          {'1:av', '2:av', '9:ns'});
+    });
+
+    test('收藏返回 error 信封 → 抛 ApiException（不再静默失败）', () async {
+      api.addResult = {
+        'error': {'msg': '请先登录', 'code': 401}
+      };
+      expect(
+        () => repo.addFavorite(ContentKind.animat, 7, source: 'ns'),
+        throwsA(isA<ApiException>()),
+      );
     });
   });
 }
