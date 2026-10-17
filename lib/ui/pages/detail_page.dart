@@ -107,8 +107,11 @@ class _BodyState extends State<_Body> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CoverImage(item: item, width: 110, height: 150),
-          const SizedBox(width: 12),
+          // 小说条目无封面，直接不显示图片区。
+          if (widget.kind != ContentKind.fiction) ...[
+            CoverImage(item: item, width: 110, height: 150),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -710,7 +713,7 @@ class _BodyState extends State<_Body> {
       return;
     }
 
-    // 图集 / 漫画：复制时即时下载→解密→打包为本地 zip，「解密后链接」给出 zip 路径。
+    // 图集 / 漫画：直接给出图片网络链接与逐图密钥（不再即时打包 zip）。
     final pages = <ReadPage>[];
     if (widget.kind == ContentKind.photo) {
       pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
@@ -726,58 +729,22 @@ class _BodyState extends State<_Body> {
       _toast('无图片');
       return;
     }
-    final enc = c.resourceService.urlFor(widget.kind, pages.first.path);
-    final key = pages.first.key;
-    final scheme = widget.kind == ContentKind.comicNs
-        ? ImageScheme.nsComic
-        : ImageScheme.perImage;
+    final urls = <String>[
+      for (final p in pages) c.resourceService.urlFor(widget.kind, p.path),
+    ];
+    final keys = <String>[
+      for (var i = 0; i < pages.length; i++)
+        if ((pages[i].key ?? '').isNotEmpty)
+          '${i + 1}. key=${pages[i].key} iv=${pages[i].iv ?? ''}',
+    ];
     if (!mounted) return;
-    final zipPath = await _packImages(_title(d.item), pages, scheme);
-    if (zipPath == null || !mounted) return;
     await showDownloadLinks(
       context,
       title: _title(d.item),
-      encrypted: enc,
-      key: key,
-      decrypted: zipPath,
+      encrypted: urls.join('\n'),
+      key: keys.join('\n'),
+      emptyHint: '暂无可用链接',
     );
-  }
-
-  /// 带进度弹窗的「图集/漫画」即时打包；返回本地 zip 路径，失败返回 null。
-  Future<String?> _packImages(
-      String title, List<ReadPage> pages, ImageScheme scheme) async {
-    final mgr = context.read<DownloadManager>();
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(mainAxisSize: MainAxisSize.min, children: [
-            SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: 16),
-            Text('正在打包 zip…'),
-          ]),
-        ),
-      ),
-    );
-    try {
-      return await mgr.packImages(
-        kind: widget.kind,
-        title: title,
-        id: '${widget.kind.tag}_${widget.id}',
-        pages: pages,
-        scheme: scheme,
-      );
-    } catch (e) {
-      _toast('打包失败：$e');
-      return null;
-    } finally {
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    }
   }
 
   /// 复制**单个分集**的下载链接（详情页分集行内「复制下载链接」按钮）。

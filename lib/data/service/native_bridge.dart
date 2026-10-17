@@ -39,6 +39,9 @@ class NativeBridge {
     }
   }
 
+  /// 是否 Android（启动授权闸门据此判断，非 Android 直接放行）。
+  static bool get isAndroid => Platform.isAndroid;
+
   /// 公共目录绝对路径，如 type=`Download`、relative=`mmlu`
   /// → `/storage/emulated/0/Download/mmlu`。不可用时返回 null。
   static Future<String?> publicDir(String type, String relative) async {

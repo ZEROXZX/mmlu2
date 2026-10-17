@@ -401,7 +401,7 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 真机现象 | 根因 | 修复 |
 |---|---|---|
 | 动漫下载 `分片 0/291 · 0B · Bad state: 拉取失败: https://stream-encrypt1.mmlutech.xyz/apen/<avkey>/key.php?...`（**HTTP 403**） | host.txt 的 `stream[].tsurl`（`stream-encrypt1.mmlutech.xyz` / `stream-encrypt1.mmlu4.site`）被当作 `?host=` 传，服务端据此把 **AV** 的 `key.php` 与 `*.ts` 签在该域上；而该域对这两者**一律 403**（实测 `GHOSTFATHER-0008` key/分片均 403、110B 错误页）。`host=na.mmlu1.site` 时 key(16B)/分片(1.2MB) 均 **200** | `StreamService.buildM3u8Url` 新增 `_streamHost` 归一化：`?host=` 一律转 `na.mmlu1.site`（`stream-encrypt*` 与空值→`na.mmlu1.site`，其它可用主机保持原样）；`DomainStore.streamTsUrl` 默认值改 `na.mmlu1.site`。NS 端点本就忽略 `?host=`（恒回 `na.mmlu1.site`），不受影响 |
-| 图集/漫画「复制链接」给出的是**单张首图**密文地址+密钥，非 zip | 服务端**无 zip 接口**，zip 是 App 本地解密后打包产物 | 详情页 `_copyLinks` 对图集/漫画改为**即时打包**：新增 `DownloadManager.packImages`（并行下载→解密→`Archive`+`ZipEncoder`→写 `Download/mmlu/<分类>/<标题>.zip`，不建任务/不发通知），完成后「解密后链接」= 该本地 **zip 路径**；期间弹「正在打包 zip…」进度框。小说仍是首章密文；动漫不变 |
+| 图集/漫画「复制链接」给出的是**单张首图**密文地址+密钥，非 zip | 服务端**无 zip 接口**，zip 是 App 本地解密后打包产物 | 详情页 `_copyLinks` 对图集/漫画改为**即时打包**：新增 `DownloadManager.packImages`（并行下载→解密→`Archive`+`ZipEncoder`→写 `Download/mmlu/<分类>/<标题>.zip`，不建任务/不发通知），完成后「解密后链接」= 该本地 **zip 路径**；期间弹「正在打包 zip…」进度框。小说仍是首章密文；动漫不变。**（fix11 起已回退：复制链接不再打包，见 §6l；`packImages` 改由「打包下载」按钮调用）** |
 
 > 诊断脚本：`tools/probe_stream.py` / `tools/diag2.py`（对同一 m3u8 轮询 `host=na.mmlu1.site` 与 `host=stream-encrypt1.*`，直取 key/分片看状态码）。
 > 契约测试：`test/stream_host_test.dart`（归一化）、`test/download_task_test.dart`（`packImages` 空页抛错）。
@@ -417,6 +417,18 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 图集详情页预览图片不显示（但点「浏览图集」能正常看） | `v3/photo/read` 只返回 `{data:[{image_path,key,iv}...]}`，**无 id/name/cover** → 详情 item 无封面 → `CoverImage` 只显示占位图 | `ContentRepo.detail` 图集分支：补回传入 id，并以**首张图**（scheme=perImage）充当详情页预览封面；详情页标题用列表页传入的 `fallbackTitle` 兜底（`_title`），`浏览图集` 也带上标题 |
 
 > 契约测试：`test/download_task_test.dart`（`remove` 保留成品文件）、`test/search_history_test.dart`（无上限/去重/删除）、`test/content_repo_animat_test.dart`（图集详情首图补封面 + 补 id）。
+
+---
+
+### 6l. 图集/漫画复制链接不再打包 zip / 小说详情去掉图片 / 启动强制授权【fix11】
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 图集/漫画点「复制链接」会**先打包 zip**，很慢很麻烦 | fix9 把「复制链接」做成了即时打包 zip（下载→解密→压缩） | **回退**：`_copyLinks` 图集/漫画分支**不再打包**，直接弹三链接框——「加密链接」= 全部图片网络地址（逐行）、「解密密钥链接」= 逐图 `key/iv`（逐行）、无「解密后」。要 zip 请用「打包下载」按钮（`_downloadImagesZip` → `DownloadManager.packImages` 保留） |
+| 小说详情页有一块**空白图片区**（无封面占位图） | 小说条目无 `cover`，详情页仍渲染 `CoverImage` 占位 | `_header` 对 `ContentKind.fiction` **不渲染图片区**（`if (kind != fiction) CoverImage(...)`） |
+| 打开软件未申请权限、可自由使用 | 权限只在首帧后台静默申请 | 新增 `ui/pages/permission_gate.dart`：`MaterialApp.home = PermissionGate(child: HomeShell())`，启动即申请「存储/相册/通知」（Android 11+ 跳系统『所有文件访问』设置页），**未授权进入授权页、无法使用**；返回 App 自动重检；提供「去授权 / 已授权？重新检测」。`NativeBridge` 新增 `isAndroid`（非 Android 放行） |
+
+> 契约测试：`test/download_task_test.dart`（`packImages` 空页抛错，打包能力仍保留）。
 
 ---
 
@@ -438,7 +450,10 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 偶发网络抖动请求直接失败 | `_send` 未对瞬时故障重试 | §6i：连接/超时/空响应退避重试（≤4 次） |
 | 登录失败无明确提示 | 未解析错误信封，200 信封被误判成功 | §6i：`extractApiMessage` + 无 token 抛错 |
 | 动漫下载分片/密钥 **403**（URL 在 `stream-encrypt1.*`） | `?host=` 用了 host.txt 的 `tsurl`（该域对 AV 的 key/分片一律 403） | §6j：`buildM3u8Url` 归一化 `?host=na.mmlu1.site` |
-| 图集/漫画「复制链接」给的是单图而非 zip | 复制时未打包 | §6j：详情页复制链接即时打包为本地 zip 并给出路径 |
+| 图集/漫画「复制链接」给的是单图而非 zip | 复制时未打包 | §6j：**（fix11 已回退，见下行）** 详情页复制链接即时打包为本地 zip 并给出路径 |
+| 图集/漫画点「复制链接」要等打包 zip，太麻烦 | fix9 把复制链接做成了即时打包 | §6l：复制链接**不再打包**，直接给全部图片网址 + 逐图 key/iv；要 zip 用「打包下载」按钮 |
+| 小说详情页有多余的空白图片区 | 小说无封面仍渲染占位图 | §6l：`_header` 对 fiction 不渲染图片区 |
+| 打开软件可直接使用、未强制授权 | 权限仅首帧后台静默申请 | §6l：`PermissionGate` 启动强制授权，未授权无法进入 |
 | 删下载记录连带删了本地文件 | 记录与文件未解耦 | §6k：只删记录，保留成品文件（`remove`/历史删除均不再 `deleteLocal`） |
 | 没有搜索历史 | 关键词未持久化 | §6k：`SearchHistoryStore`（无上限 + 逐条删/清空） |
 | 图集详情页预览图空白（但能浏览） | `photoRead` 只给页表、无 cover | §6k：用**首张图**当预览封面 + 标题用列表页兜底 |

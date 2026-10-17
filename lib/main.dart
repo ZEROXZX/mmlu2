@@ -5,8 +5,8 @@ import 'package:provider/provider.dart';
 
 import 'app/app_container.dart';
 import 'data/service/download_task.dart';
-import 'data/service/native_bridge.dart';
 import 'ui/pages/home_shell.dart';
+import 'ui/pages/permission_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,11 +22,6 @@ Future<void> main() async {
     } catch (_) {}
   }());
   runApp(MmluApp(container: container));
-  // 首帧后申请 存储 / 相册 / 通知 权限。
-  // 失败静默：下载会自动回退到 app 私有目录。
-  Future<void>.delayed(const Duration(milliseconds: 800), () {
-    unawaited(NativeBridge.ensurePermissions());
-  });
 }
 
 class MmluApp extends StatelessWidget {
@@ -45,8 +40,9 @@ class MmluApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme:
               ThemeData(colorSchemeSeed: const Color(0xFF7B61FF), useMaterial3: true),
-          // 打开即进主界面，不强制登录；登录入口在「账号」页。
-          home: const HomeShell(),
+          // 打开即申请存储/相册/通知权限，未授权无法进入；
+          // 授权后进入主界面，登录入口在「账号」页。
+          home: const PermissionGate(child: HomeShell()),
         ),
       ),
     );
