@@ -635,8 +635,7 @@ class DownloadManager extends ChangeNotifier {
       while (pending.isNotEmpty) {
         if (t.cancelRequested) return;
         final i = pending.removeLast();
-        texts[i] = await service.getText(
-            resources.urlFor(t.kind, chapters[i].path));
+        texts[i] = await resources.getText(t.kind, chapters[i].path);
         done++;
         t.done = done;
         t.bytes = 0;

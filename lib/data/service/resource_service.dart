@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -37,6 +38,38 @@ class ResourceService {
     final root = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
     final rel = path.startsWith('/') ? path : '/$path';
     return '$root$rel';
+  }
+
+  /// 资源 URL **候选列表**（首个优先）。小说域额外附带备用主机
+  /// （[MmluKeys.fictionFallbackHosts]），应对单线路 403/重置。
+  List<String> urlsFor(ContentKind kind, String path) {
+    final primary = urlFor(kind, path);
+    if (kind != ContentKind.fiction) return [primary];
+    final rel = path.startsWith('/') ? path : '/$path';
+    return {
+      primary,
+      for (final h in MmluKeys.fictionFallbackHosts)
+        '${h.endsWith('/') ? h.substring(0, h.length - 1) : h}$rel',
+    }.toList();
+  }
+
+  /// 拉取明文本（小说章节，多主机兜底；带重试）。
+  Future<String> getText(ContentKind kind, String path, {int tries = 8}) async {
+    final candidates = urlsFor(kind, path);
+    Object? last;
+    for (var i = 0; i < tries; i++) {
+      final url = candidates[i % candidates.length];
+      try {
+        final r = await _dio.get<List<int>>(url);
+        final b = r.data;
+        if (b != null && b.isNotEmpty) return utf8.decode(b, allowMalformed: true);
+        last = StateError('empty: $url');
+      } catch (e) {
+        last = e;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 400 + (i * 300)));
+    }
+    throw StateError('小说正文拉取失败: $path ($last)');
   }
 
   /// 下载并解密单个资源引用，返回明文（JPEG）字节。

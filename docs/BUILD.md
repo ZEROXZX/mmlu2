@@ -379,6 +379,21 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 > 但**随 m3u8 每次实时下发**，故播放/下载前必须重新拉 m3u8（客户端已如此）。
 > `source` 缺省时按 NS 处理；参考实现 src4 `server.py:694` 对 anime 详情也恒走 v3，**同样会错，勿盲抄**。
 
+### 6i. 复制链接入口不明显 / 动漫合集需分开下载 / 瞬时网络抖动 / 登录文案【fix8】
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 「复制下载链接」找不到入口 | 任务行仅有个小图标、历史行要隐式点按整行 | 详情页与下载页**两处都有**：详情页下载按钮旁加「复制链接」（**下载前**即可取；分集行内亦有「复制下载链接」）；下载页任务行加**显式「复制下载链接」按钮**（带文字）、历史行 `trailing` 加链接按钮（与删除并列），`onTap` 保留 |
+| 下载页只有在**下载完成后**才显示链接 | 三链接里「解密后链接」= 本地成品文件路径，需下载完才有 | 详情页「复制链接」**未下载时**：加密链接=m3u8、密钥链接=`key.php` keyUri、解密后链接=**本机串流代理地址** `http://127.0.0.1:端口/play.m3u8?m=...`（边下边播用）；下载完成后下载页该条改显示本地文件路径 |
+| 动漫只能「一起下」，想分开选几集下 | 详情只有一个下载按钮（=整季入队） | `detail_page` 拆两个按钮：**`合集一起下载`**（全集入队）与 **`分开下载`**（勾选框多选分集，逐集独立任务，画质选一次） |
+| 偶发网络抖动请求直接失败 | `_send` 只做 token 自愈，未对瞬时故障重试 | `_send` 对**连接/超时/空响应**退避重试（≤4 次，指数退避）；HTTP 错误不重试 |
+| 小说正文某线路 403 / reset | 单 host 无兜底 | `ResourceService.urlsFor`/`getText`：fiction 域按 `MmluKeys.fictionFallbackHosts`（`fiction1.mmlutech.xyz` → `fiction1.mmlu4.site`）轮换 |
+| 登录失败无明确提示（只 `ApiException(...)`） | 未解析服务端错误信封；且 200+错误信封会被误判为登录成功 | `ApiService.login` 无 token 即抛错；`extractApiMessage` 递归提取 `message/msg/error/errors/detail` 文案，登录页显示友好提示 |
+
+> 复制链接对话框（共用组件 `lib/ui/widgets/download_links.dart` → `showDownloadLinks`）含**加密链接 / 解密密钥链接 / 解密后链接**三条，支持「复制全部」；任务任意状态均可查看（未开始下载时提示「暂无可用链接」）。
+> 详情页入口：`_actions` 的「复制链接」按钮（`_copyLinks`）+ 分集行内链接图标（`_copyLinksForEpisode`）；动漫需先选分集/画质，取 `StreamService.buildM3u8Url`(加密) + 解析 m3u8 的 keyUri(密钥) + `HlsProxy.playUrl`(解密后本机地址)。
+> **未借鉴**（评估后放弃）：参考实现 `ts2mp4.py` 的纯 Dart TS→MP4 重封装（本沙箱无 ffmpeg/ffprobe，无法验证位级输出，风险高）；Cloudflare 候选 IP 兜底（真机 DNS 正常，收益低）；收藏/历史多路径回退（现接口已稳定，收益低）。
+
 ---
 
 ## 7. 常见错误速查（均为沙箱实测）
@@ -395,6 +410,9 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 下载分片 `No host specified in URI` | m3u8 的 KEY URI 无 scheme | §6f：`parseM3u8` 补 `https://` |
 | 未登录报 `499 缺少Token參數` / 内容空 `unidentify` | 无游客 token / 注册后未 startup | §6g：启动注册游客 token + startup；499/unidentify 自动重试 |
 | 搜索展示与点开动漫内容不符 / 点开 `ApiException(410) 资源无法存取` | AV/NS 两套 id 空间，详情未按 `source` 路由 | §6h：详情**按 source 路由**（av→`v2/combine/animat`，ns→`v3/nsanimat`），410/404 互相回退 |
+| 下载页找不到「复制链接」入口 / 动漫想分开选集下载 | 入口隐式、只有全集按钮 | §6i：任务行显式「复制下载链接」按钮；详情拆「合集一起下载 / 分开下载」 |
+| 偶发网络抖动请求直接失败 | `_send` 未对瞬时故障重试 | §6i：连接/超时/空响应退避重试（≤4 次） |
+| 登录失败无明确提示 | 未解析错误信封，200 信封被误判成功 | §6i：`extractApiMessage` + 无 token 抛错 |
 | 播放 `ExoPlaybackException: Source error` | 本地代理 127.0.0.1 明文被系统拦截 | §6g：network_security_config 放行 localhost |
 | 小说列表空白图 / 阅读 403 | 小说无封面仍渲染图；正文取错域(ac1) | §6g：fiction 纯文字卡 + 正文走 fiction 域 |
 | 收藏第一个漫画无封面 | ns 封面 key/iv 为 Base64 逐图 | §6g：`_coverOf` 自动切 perImage |

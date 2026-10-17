@@ -5,8 +5,10 @@ import '../../app/app_container.dart';
 import '../../data/models/content.dart';
 import '../../data/repo/content_repo.dart';
 import '../../data/service/download_task.dart';
+import '../../data/service/stream_service.dart';
 import '../widgets/async_view.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/download_links.dart';
 import 'content_list_page.dart';
 import 'player_page.dart';
 import 'reader_page.dart';
@@ -198,9 +200,15 @@ class _BodyState extends State<_Body> {
       buttons.add(OutlinedButton.icon(
         onPressed: () => _downloadAnimat(d),
         icon: const Icon(Icons.download),
-        label: const Text('下载'),
+        label: const Text('合集一起下载'),
+      ));
+      buttons.add(OutlinedButton.icon(
+        onPressed: () => _downloadAnimatPick(d),
+        icon: const Icon(Icons.checklist),
+        label: const Text('分开下载'),
       ));
     } else if (widget.kind == ContentKind.fiction) {
+
       buttons.add(OutlinedButton.icon(
         onPressed: () => _downloadFiction(d),
         icon: const Icon(Icons.download),
@@ -213,6 +221,13 @@ class _BodyState extends State<_Body> {
         label: const Text('打包下载'),
       ));
     }
+
+    // 下载前即可获取「加密 / 密钥 / 解密后」链接（无需先下载完成）。
+    buttons.add(OutlinedButton.icon(
+      onPressed: () => _copyLinks(d),
+      icon: const Icon(Icons.link),
+      label: const Text('复制链接'),
+    ));
 
     return [
       Padding(
@@ -256,9 +271,20 @@ class _BodyState extends State<_Body> {
             leading: const Icon(Icons.play_circle_outline),
             title: Text(e.title.isEmpty ? (e.avkey ?? '第 ${e.ep} 集') : e.title),
             subtitle: Text('${e.season != null ? '第${e.season}季 ' : ''}第${e.ep ?? '-'}集'),
-            trailing: IconButton(
-              icon: const Icon(Icons.download_outlined),
-              onPressed: () => _downloadSingleEpisode(e),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '复制下载链接',
+                  icon: const Icon(Icons.link, size: 20),
+                  onPressed: () => _copyLinksForEpisode(e),
+                ),
+                IconButton(
+                  tooltip: '下载本集',
+                  icon: const Icon(Icons.download_outlined, size: 20),
+                  onPressed: () => _downloadSingleEpisode(e),
+                ),
+              ],
             ),
             onTap: () => _play(e, sorted),
           ),
@@ -462,6 +488,59 @@ class _BodyState extends State<_Body> {
         : '已加入下载队列，可在「下载」页查看/暂停/取消');
   }
 
+  /// 分开下载——弹勾选框选部分分集，每集生成一个独立任务（画质统一选一次）。
+  Future<void> _downloadAnimatPick(ContentDetail d) async {
+    final episodes = d.episodes.isNotEmpty ? d.episodes : [d.item];
+    final sorted = [...episodes]..sort((a, b) {
+        final s = (a.season ?? 0).compareTo(b.season ?? 0);
+        return s != 0 ? s : (a.ep ?? 0).compareTo(b.ep ?? 0);
+      });
+    if (sorted.every((e) => e.media.isEmpty)) {
+      _toast('无播放源');
+      return;
+    }
+    final titles = [
+      for (var i = 0; i < sorted.length; i++)
+        sorted[i].title.isNotEmpty
+            ? sorted[i].title
+            : '第 ${sorted[i].ep ?? i + 1} 集',
+    ];
+    final picked = sorted.length == 1
+        ? <int>[0]
+        : await showDialog<List<int>>(
+            context: context,
+            builder: (_) => _ChapterPickDialog(
+              title: '选择要下载的分集',
+              unit: '集',
+              titles: titles,
+            ),
+          );
+    if (picked == null || picked.isEmpty) return;
+    if (!mounted) return;
+
+    final allMedia = d.item.media.isNotEmpty ? d.item.media : sorted.first.media;
+    if (allMedia.isEmpty) {
+      _toast('无播放源');
+      return;
+    }
+    final quality = await _pickQuality(allMedia.keys.toList());
+    if (quality == null || !mounted) return;
+
+    final mgr = context.read<DownloadManager>();
+    var n = 0;
+    for (final i in picked) {
+      final path = sorted[i].media[quality] ?? allMedia[quality];
+      if (path == null || path.isEmpty) continue;
+      mgr.addVideo(item: sorted[i], mediaPath: path, quality: quality);
+      n++;
+    }
+    if (n == 0) {
+      _toast('该画质下无可用分集');
+      return;
+    }
+    _toast('已加入下载队列：$n 集（$quality），可在「下载」页查看/暂停/复制链接');
+  }
+
   Future<void> _downloadSingleEpisode(ContentItem ep) async {
     final media = ep.media;
     if (media.isEmpty) {
@@ -541,6 +620,137 @@ class _BodyState extends State<_Body> {
     _toast('已加入下载队列，可在「下载」页取消');
   }
 
+  /// 复制下载链接：**下载前**即可在详情页获取三条链接（无需先下载）。
+  ///
+  /// - 动漫：选分集+画质 → 加密(m3u8)/密钥(key.php)/解密后(本机串流代理地址)；
+  /// - 小说/图集/漫画：取首个资源的密文地址与密钥。
+  Future<void> _copyLinks(ContentDetail d) async {
+    final c = context.read<AppContainer>();
+    if (widget.kind == ContentKind.animat) {
+      final episodes = d.episodes.isNotEmpty ? d.episodes : [d.item];
+      final sorted = [...episodes]..sort((a, b) {
+          final s = (a.season ?? 0).compareTo(b.season ?? 0);
+          return s != 0 ? s : (a.ep ?? 0).compareTo(b.ep ?? 0);
+        });
+      var ep = sorted.first;
+      if (sorted.length > 1) {
+        final idx = await _pickSingle('选择分集', [
+          for (var i = 0; i < sorted.length; i++)
+            sorted[i].title.isNotEmpty
+                ? sorted[i].title
+                : '第 ${sorted[i].ep ?? i + 1} 集',
+        ]);
+        if (idx == null || !mounted) return;
+        ep = sorted[idx];
+      }
+      final media = ep.media.isNotEmpty ? ep.media : d.item.media;
+      if (media.isEmpty) {
+        _toast('无播放源');
+        return;
+      }
+      final quality = await _pickQuality(media.keys.toList());
+      if (quality == null || !mounted) return;
+      final mediaPath = media[quality]!;
+      final baseTitle = ep.title.isNotEmpty ? ep.title : d.item.title;
+      try {
+        final info = StreamService.parseM3u8(
+            await c.streamService.fetchM3u8(mediaPath));
+        final decrypted = await c.hlsProxy.playUrl(mediaPath);
+        if (!mounted) return;
+        await showDownloadLinks(
+          context,
+          title: '$baseTitle · $quality',
+          encrypted: c.streamService.buildM3u8Url(mediaPath),
+          key: info.keyUri,
+          decrypted: decrypted,
+        );
+      } catch (e) {
+        _toast('获取链接失败：$e');
+      }
+      return;
+    }
+
+    // 小说 / 图集 / 漫画：取首个资源的密文地址与密钥。
+    String? enc;
+    String? key;
+    if (widget.kind == ContentKind.fiction) {
+      if (d.fictionChapters.isEmpty) {
+        _toast('无章节');
+        return;
+      }
+      enc = c.resourceService.urlFor(widget.kind, d.fictionChapters.first.path);
+    } else {
+      final pages = <ReadPage>[];
+      if (widget.kind == ContentKind.photo) {
+        pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
+      } else if (d.chapters.isNotEmpty) {
+        pages.addAll(await c.contentRepo.readPages(widget.kind,
+            id: widget.id, chapterId: d.chapters.first.chapterId));
+      } else {
+        pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
+      }
+      if (pages.isEmpty) {
+        _toast('无图片');
+        return;
+      }
+      enc = c.resourceService.urlFor(widget.kind, pages.first.path);
+      key = pages.first.key;
+    }
+    if (!mounted) return;
+    await showDownloadLinks(
+      context,
+      title: d.item.title,
+      encrypted: enc,
+      key: key,
+      emptyHint: '暂无可复制链接',
+    );
+  }
+
+  /// 复制**单个分集**的下载链接（详情页分集行内「复制下载链接」按钮）。
+  Future<void> _copyLinksForEpisode(ContentItem ep) async {
+    final c = context.read<AppContainer>();
+    final media = ep.media;
+    if (media.isEmpty) {
+      _toast('该分集无播放源');
+      return;
+    }
+    final quality = await _pickQuality(media.keys.toList());
+    if (quality == null || !mounted) return;
+    final mediaPath = media[quality]!;
+    try {
+      final info = StreamService.parseM3u8(
+          await c.streamService.fetchM3u8(mediaPath));
+      final decrypted = await c.hlsProxy.playUrl(mediaPath);
+      if (!mounted) return;
+      await showDownloadLinks(
+        context,
+        title: '${ep.title.isEmpty ? '第 ${ep.ep} 集' : ep.title} · $quality',
+        encrypted: c.streamService.buildM3u8Url(mediaPath),
+        key: info.keyUri,
+        decrypted: decrypted,
+      );
+    } catch (e) {
+      _toast('获取链接失败：$e');
+    }
+  }
+
+  Future<int?> _pickSingle(String title, List<String> options) {
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(title),
+        children: [
+          for (var i = 0; i < options.length; i++)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(i),
+              child: Text(options[i],
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<String?> _pickQuality(List<String> qualities) {
     const order = ['720', '240', 'intro'];
     final sorted = qualities.toList()
@@ -577,11 +787,17 @@ class _BodyState extends State<_Body> {
   }
 }
 
-/// 小说多章下载勾选框（默认全选，可全选/全不选）。
+/// 多项下载勾选框（默认全选，可全选/全不选）。小说章节与动漫分集共用。
 class _ChapterPickDialog extends StatefulWidget {
-  const _ChapterPickDialog({required this.titles});
+  const _ChapterPickDialog({
+    required this.titles,
+    this.title = '选择要下载的章节',
+    this.unit = '章',
+  });
 
   final List<String> titles;
+  final String title;
+  final String unit;
 
   @override
   State<_ChapterPickDialog> createState() => _ChapterPickDialogState();
@@ -595,7 +811,7 @@ class _ChapterPickDialogState extends State<_ChapterPickDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('选择要下载的章节'),
+      title: Text(widget.title),
       content: SizedBox(
         width: double.maxFinite,
         child: ListView(
@@ -638,7 +854,7 @@ class _ChapterPickDialogState extends State<_ChapterPickDialog> {
           onPressed: _sel.isEmpty
               ? null
               : () => Navigator.pop(context, _sel.toList()..sort()),
-          child: Text('下载（${_sel.length} 章）'),
+          child: Text('下载（${_sel.length} ${widget.unit}）'),
         ),
       ],
     );

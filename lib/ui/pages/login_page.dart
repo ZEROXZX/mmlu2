@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
+import '../../core/network/api_exception.dart';
 
 /// 官方账号登录页（内容接口需登录，游客 token 会 495 unidentify）。
 ///
@@ -42,7 +43,10 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
-      if (mounted) setState(() => _err = '$e');
+      final msg = e is ApiException
+          ? extractApiMessage(e.body, fallback: e.message)
+          : '$e';
+      if (mounted) setState(() => _err = msg);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

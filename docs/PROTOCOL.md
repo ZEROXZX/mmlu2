@@ -658,7 +658,8 @@ App 启动本地 HTTP 服务 `http://localhost:1140`，把播放地址指到本�
 - **明文 UTF-8**（无加密；`filepath`=简体，`filepath_tw`=繁体）。实测 131620B，直接是中文正文。**[实测]**
 - ⚠ **正文必须走 fiction 域**（`fiction1.mmlutech.xyz` / `fiction1.mmlu4.site`）。
   实测同一 `filepath` 用 `ac1.mmlutech.xyz`（comic 域）→ **403**，用 `ac1` 拼接还会 `Connection reset`。
-  客户端 `ResourceService.urlFor` 对 `ContentKind.fiction` 取 `apiFiction`。
+  客户端 `ResourceService.urlFor` 对 `ContentKind.fiction` 取 `apiFiction`；
+  多主机兜底见 `ResourceService.urlsFor`/`getText`（按 `MmluKeys.fictionFallbackHosts` 轮换，参考实现 `FICTION_HOSTS`）。
 - 小说条目**无 `cover` 字段**（列表/详情都没有），UI 不应渲染封面图。
 
 ### 9C.7 资源解密速查

@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -46,12 +45,12 @@ class _ReaderPageState extends State<ReaderPage> {
 
   Widget _buildFiction() {
     final container = context.read<AppContainer>();
-    final url = container.resourceService.urlFor(widget.kind, widget.fictionPath ?? '');
     if (widget.fictionPath == null || widget.fictionPath!.isEmpty) {
       return const EmptyView(text: '无正文路径');
     }
     return AsyncView<String>(
-      future: Dio().get<String>(url, options: Options(responseType: ResponseType.plain)).then((r) => r.data ?? ''),
+      future: container.resourceService
+          .getText(widget.kind, widget.fictionPath!),
       builder: (context, text) => SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: SelectableText(text, style: const TextStyle(fontSize: 17, height: 1.6)),

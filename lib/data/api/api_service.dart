@@ -91,31 +91,64 @@ class ApiService {
   Future<void> ensureGuestToken({bool force = false}) =>
       _client.ensureGuestToken(force: force);
 
+  /// 发送请求，并对**瞬时故障**做指数退避重试（连接/超时/空响应）；
+  /// 同时保留 token 自愈（unidentify / 499 / 495），对齐参考实现 `call()`。
   Future<Object?> _send(Future<Response<dynamic>> Function() f) async {
-    try {
-      final r = await f();
-      // 游客会话未激活（注册后未 startup）时服务端回 200 + `{error:{msg:unidentify}}`：
-      // 重新注册（含 startup）后原样重试一次。
-      if (_isUnidentify(r.data) && !_client.tokenStore.isLoggedIn) {
-        await _client.ensureGuestToken(force: true);
-        return (await f()).data;
-      }
-      return r.data;
-    } on DioException catch (e) {
-      final err = e.error;
-      final code = err is ApiException ? err.statusCode : (e.response?.statusCode ?? -1);
-      // 缺/失效 token：补一个游客 token 后原样重试一次（参考实现 call() 的自愈）。
-      if ((code == 499 || code == 495) && !_client.tokenStore.isLoggedIn) {
-        try {
+    const maxAttempts = 4;
+    for (var attempt = 1;; attempt++) {
+      try {
+        final r = await f();
+        // 游客会话未激活（注册后未 startup）时服务端回 200 + `{error:{msg:unidentify}}`：
+        // 重新注册（含 startup）后原样重试一次。
+        if (_isUnidentify(r.data) && !_client.tokenStore.isLoggedIn) {
           await _client.ensureGuestToken(force: true);
           return (await f()).data;
-        } on DioException catch (e2) {
-          _raise(e2);
         }
+        // 偶发空响应（网关异常）→ 退避重试。
+        if (_isEmpty(r.data) && attempt < maxAttempts) {
+          await Future<void>.delayed(_backoff(attempt));
+          continue;
+        }
+        return r.data;
+      } on DioException catch (e) {
+        final err = e.error;
+        final code =
+            err is ApiException ? err.statusCode : (e.response?.statusCode ?? -1);
+        // 缺/失效 token：补一个游客 token 后原样重试一次（参考实现 call() 的自愈）。
+        if ((code == 499 || code == 495) && !_client.tokenStore.isLoggedIn) {
+          try {
+            await _client.ensureGuestToken(force: true);
+            return (await f()).data;
+          } on DioException catch (e2) {
+            _raise(e2);
+          }
+        }
+        // 瞬时网络故障（连接失败/超时）→ 退避重试。
+        if (attempt < maxAttempts && _isTransient(e)) {
+          await Future<void>.delayed(_backoff(attempt));
+          continue;
+        }
+        _raise(e);
       }
-      _raise(e);
     }
   }
+
+  static Duration _backoff(int attempt) =>
+      Duration(milliseconds: 300 * attempt + (attempt * 137) % 250);
+
+  static bool _isEmpty(Object? d) =>
+      d == null || (d is String && d.trim().isEmpty);
+
+  /// 是否瞬时故障（可安全重试）。HTTP 错误（有响应）不算。
+  static bool _isTransient(DioException e) => switch (e.type) {
+        DioExceptionType.connectionTimeout ||
+        DioExceptionType.sendTimeout ||
+        DioExceptionType.receiveTimeout ||
+        DioExceptionType.connectionError =>
+          true,
+        DioExceptionType.unknown => e.response == null,
+        _ => false,
+      };
 
   static bool _isUnidentify(Object? d) =>
       d is Map && d['error'] is Map && (d['error'] as Map)['msg'] == 'unidentify';
@@ -170,7 +203,16 @@ class ApiService {
     final map = _map(data);
     // 某些形态可能包一层 data；两种都兼容。
     final inner = map['data'] is Map ? (map['data'] as Map).cast<String, dynamic>() : map;
-    return TokenResponse.fromJson(inner);
+    final res = TokenResponse.fromJson(inner);
+    // 服务端在部分失败场景下回 HTTP 200 + 错误信封（无 token）：显式抛出，避免误判登录成功。
+    if (res.token == null || res.token!.isEmpty) {
+      throw ApiException(
+        200,
+        extractApiMessage(map, fallback: '登录失败，请检查手机号与密码'),
+        body: map,
+      );
+    }
+    return res;
   }
 
   Future<UserInfoResponse> userInfo() async =>

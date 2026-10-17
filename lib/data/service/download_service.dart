@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -89,27 +87,6 @@ class DownloadService {
   Directory _ensure(Directory dir) {
     if (!dir.existsSync()) dir.createSync(recursive: true);
     return dir;
-  }
-
-  /// 拉取明文 UTF-8 文本（小说章节；带重试）。
-  Future<String> getText(String url, {int tries = 8}) async {
-    Object? last;
-    for (var i = 0; i < tries; i++) {
-      try {
-        final r = await Dio().get<List<int>>(url,
-            options: Options(
-              responseType: ResponseType.bytes,
-              headers: {'User-Agent': 'okhttp/4.9.0'},
-            ));
-        final b = r.data;
-        if (b != null && b.isNotEmpty) return utf8.decode(b, allowMalformed: true);
-        last = StateError('empty: $url');
-      } catch (e) {
-        last = e;
-      }
-      await Future<void>.delayed(Duration(milliseconds: 500 + i * 400));
-    }
-    throw StateError('拉取失败: $url ($last)');
   }
 
   Future<void> deleteLocal(String filePath) async {

@@ -32,6 +32,13 @@ class MmluKeys {
     'https://m1.mmlu1.site/host.txt',
     'https://n1.mmlu1.site/host.txt',
   ];
+
+  /// 小说域备用主机（参考实现 FICTION_HOSTS）：
+  /// 首个为运行时 [DomainStore] 默认值，其余在首个失败时兜底重试。
+  static const List<String> fictionFallbackHosts = [
+    'https://fiction1.mmlutech.xyz',
+    'https://fiction1.mmlu4.site',
+  ];
 }
 
 /// APK 版本相关固定头。
