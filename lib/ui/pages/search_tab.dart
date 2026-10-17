@@ -19,13 +19,80 @@ class _SearchTabState extends State<SearchTab> {
   ContentKind _kind = ContentKind.animat;
   final _kw = TextEditingController();
   Future<List<ContentItem>>? _future;
+  List<String> _history = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _history = context.read<AppContainer>().searchHistoryStore.load();
+  }
 
   void _run() {
     final kw = _kw.text.trim();
     if (kw.isEmpty) return;
+    final c = context.read<AppContainer>();
+    c.searchHistoryStore.add(kw);
     setState(() {
-      _future = context.read<AppContainer>().contentRepo.search(_kind, kw);
+      _history = c.searchHistoryStore.load();
+      _future = c.contentRepo.search(_kind, kw);
     });
+  }
+
+  void _searchKw(String kw) {
+    _kw.text = kw;
+    _run();
+  }
+
+  Future<void> _removeHistory(String kw) async {
+    final c = context.read<AppContainer>();
+    await c.searchHistoryStore.remove(kw);
+    if (mounted) setState(() => _history = c.searchHistoryStore.load());
+  }
+
+  Future<void> _clearHistory() async {
+    final c = context.read<AppContainer>();
+    await c.searchHistoryStore.clear();
+    if (mounted) setState(() => _history = c.searchHistoryStore.load());
+  }
+
+  /// 搜索历史（无上限；点按重搜，逐条删除或清空）。空闲时显示。
+  Widget _historyBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('搜索历史',
+                  style: TextStyle(fontSize: 13, color: Colors.black54)),
+              const Spacer(),
+              TextButton(
+                onPressed: _clearHistory,
+                style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                child: const Text('清空', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final kw in _history)
+                InputChip(
+                  label: Text(kw),
+                  onPressed: () => _searchKw(kw),
+                  onDeleted: () => _removeHistory(kw),
+                  deleteIcon: const Icon(Icons.close, size: 16),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -64,6 +131,7 @@ class _SearchTabState extends State<SearchTab> {
             ],
           ),
         ),
+        if (_future == null && _history.isNotEmpty) _historyBar(),
         Expanded(
           child: _future == null
               ? const EmptyView(text: '输入关键词开始搜索')

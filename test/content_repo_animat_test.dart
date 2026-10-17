@@ -16,6 +16,18 @@ class _FakeApi extends ApiService {
   int avCalls = 0;
   Object? nsResult;
   Object? avResult;
+  Object? photoResult;
+
+  @override
+  Future<Object?> photoRead({
+    required int id,
+    int counts = 0,
+    int pages = 0,
+  }) async =>
+      photoResult;
+
+  @override
+  Future<Object?> photoSimilar(int id) async => {'data': const []};
 
   @override
   Future<Object?> nsAnimatDetail(int id) async {
@@ -115,6 +127,26 @@ void main() {
         throwsA(isA<ApiException>()),
       );
       expect(api.avCalls, 0);
+    });
+  });
+
+  group('图集详情（photoRead 只返回页表）', () {
+    test('用首张图补出预览封面，并保留传入 id', () async {
+      api.photoResult = {
+        'data': [
+          {'image_path': 'a/0001.jpg', 'key': 'k1==', 'iv': 'iv1=='},
+          {'image_path': 'a/0002.jpg', 'key': 'k2==', 'iv': 'iv2=='},
+        ],
+      };
+
+      final d = await repo.detail(ContentKind.photo, 64483);
+
+      expect(d.item.id, 64483, reason: 'id 需补回，否则阅读页会请求 id=0');
+      expect(d.item.cover, isNotNull, reason: '预览封面来自首张图');
+      expect(d.item.cover!.path, 'a/0001.jpg');
+      expect(d.item.cover!.scheme, ImageScheme.perImage);
+      expect(d.item.cover!.key, 'k1==');
+      expect(d.item.cover!.iv, 'iv1==');
     });
   });
 }

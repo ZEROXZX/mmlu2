@@ -112,9 +112,21 @@ class ContentRepo {
     }
 
     if (kind == ContentKind.photo) {
-      // photoRead 只返回页表（`{data:[...]}`，无 id/name），直接用它建 item 会丢 id，
-      // 导致 ReaderPage 再调 photoRead(id=0) → 500。显式补回传入的 id。
-      final item = ContentItem.fromJson(kind, {...map, 'id': id});
+      // photoRead 只返回页表（`{data:[{image_path,key,iv}...]}`，无 id/name/cover）：
+      // 显式补回传入的 id（否则 ReaderPage 再调 photoRead(id=0) → 500）；并用**首张图**
+      // 充当详情页预览封面（否则预览区永远只显示占位图）。
+      final dataList = _asMapList(map['data'] ?? res);
+      final first = dataList.isNotEmpty ? ReadPage.fromJson(dataList.first) : null;
+      final item = ContentItem.fromJson(kind, {
+        ...map,
+        'id': id,
+        if (first != null && first.path.isNotEmpty)
+          'cover': {
+            'cover_path': first.path,
+            'key': first.key,
+            'iv': first.iv,
+          },
+      });
       // 图集详情是页表（无 samelike），相似作品走独立接口 v3/photo/similar。
       var similar = const <ContentItem>[];
       try {

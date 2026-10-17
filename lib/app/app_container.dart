@@ -12,6 +12,7 @@ import '../data/service/download_store.dart';
 import '../data/service/download_task.dart';
 import '../data/service/hls_proxy.dart';
 import '../data/service/resource_service.dart';
+import '../data/service/search_history_store.dart';
 import '../data/service/stream_service.dart';
 
 /// 依赖容器（轻量手写 DI，等价于 App 的 Koin 模块）。
@@ -32,6 +33,7 @@ class AppContainer {
     required this.downloadStore,
     required this.downloadService,
     required this.downloadManager,
+    required this.searchHistoryStore,
     required this.hlsProxy,
   });
 
@@ -48,6 +50,7 @@ class AppContainer {
   final DownloadStore downloadStore;
   final DownloadService downloadService;
   final DownloadManager downloadManager;
+  final SearchHistoryStore searchHistoryStore;
   final HlsProxy hlsProxy;
 
   static Future<AppContainer> bootstrap() async {
@@ -81,6 +84,7 @@ class AppContainer {
       downloadStore: downloadStore,
       downloadService: downloads,
       downloadManager: downloadManager,
+      searchHistoryStore: SearchHistoryStore(prefs),
       hlsProxy: HlsProxy(streams),
     );
   }

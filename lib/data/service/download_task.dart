@@ -175,6 +175,51 @@ class DownloadManager extends ChangeNotifier {
   /// [id] 是否已有对应任务（下载页据此把任务区与历史区去重）。
   bool hasTask(String id) => byId(id) != null;
 
+  /// 按需把「图集/漫画」全部页**下载→解密→打包**为本地 zip，返回 zip 文件路径。
+  ///
+  /// 与下载任务无关：不新建/登记任务、不发完成通知，仅产出
+  /// `Download/mmlu/<分类>/<标题>.zip`（供详情页「复制链接」按需打包复用）；
+  /// 任一分页失败即抛 [StateError]。
+  Future<String> packImages({
+    required ContentKind kind,
+    required String title,
+    required String id,
+    required List<ReadPage> pages,
+    ImageScheme scheme = ImageScheme.perImage,
+  }) async {
+    if (pages.isEmpty) throw StateError('无图片');
+    final dir = await service.subDir(kind.label);
+    final zipPath = p.join(dir.path, '${_safeName(title, id)}.zip');
+
+    final results = List<Uint8List?>.filled(pages.length, null);
+    final pending = <int>[for (var i = 0; i < pages.length; i++) i];
+
+    Future<void> worker() async {
+      while (pending.isNotEmpty) {
+        final i = pending.removeLast();
+        final pg = pages[i];
+        results[i] = await resources.fetchDecrypted(
+          kind,
+          ResourceRef(path: pg.path, scheme: scheme, key: pg.key, iv: pg.iv),
+        );
+      }
+    }
+
+    await Future.wait(
+        List.generate(concurrency.clamp(1, 8), (_) => worker()));
+
+    final archive = Archive();
+    for (var i = 0; i < results.length; i++) {
+      final b = results[i];
+      if (b == null) throw StateError('第 ${i + 1} 页下载失败');
+      archive.addFile(
+          ArchiveFile('${(i + 1).toString().padLeft(4, '0')}.jpg', b.length, b));
+    }
+    final zipBytes = ZipEncoder().encode(archive) ?? Uint8List(0);
+    await File(zipPath).writeAsBytes(zipBytes);
+    return zipPath;
+  }
+
   /// 新增视频下载任务。
   String addVideo({
     required ContentItem item,
@@ -286,28 +331,17 @@ class DownloadManager extends ChangeNotifier {
     _launch(t);
   }
 
-  /// 移除终态任务（同时清理其记录与本地产物）。
+  /// 移除终态任务**记录**（保留本地已下载文件与相册导出）。
+  ///
+  /// 只清掉任务与 R2 历史记录，以及下载中途的临时分片目录 `.parts_<id>`；
+  /// **不删** `Download/mmlu/<分类>/<标题>.*` 成品，也**不删** `Pictures/mmlu/<标题>`。
+  /// （用户确认：删记录不应连带删文件；要清空间请自行到文件管理器删。）
   Future<void> remove(DownloadTask t) async {
     if (t.isActive) return;
     _tasks.remove(t);
     notifyListeners();
     await store.removeMany([t.id]);
-    if (t.outputPath != null) await service.deleteLocal(t.outputPath!);
     await _deleteDir(await _partDirOf(t.id));
-    try {
-      final dir = await service.subDir(t.kind.label);
-      final base = _safeName(t.title, t.id);
-      for (final ext in const ['ts', 'mp4', 'zip', 'txt']) {
-        await service.deleteLocal(p.join(dir.path, '$base.$ext'));
-      }
-    } catch (_) {}
-    // 图片任务若曾导出相册，一并清理 Pictures/mmlu/<标题>。
-    if (t.type == DownloadType.image) {
-      try {
-        final g = await service.galleryDir(_safeName(t.title));
-        if (g != null) await _deleteDir(g.path);
-      } catch (_) {}
-    }
   }
 
   /// 清空已结束任务（仅终态）。

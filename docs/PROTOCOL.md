@@ -40,7 +40,7 @@
 | comic_avdata | `ac1.mmlutech.xyz` / `ac1.mmlu4.site` |
 | fiction | `fiction1.*`（mlu4.services / mmlu4.site 等镜像）|
 | img | `img1.*` |
-| stream | `stream-encrypt1.mmlutech.xyz` / `stream-encrypt1.mmlu4.site` |
+| stream | `stream-encrypt1.mmlutech.xyz` / `stream-encrypt1.mmlu4.site`（⚠ 这是 host.txt 的 `tsurl`，**不可**直接当 `?host=` 用，见 §9B.1） |
 
 host.txt 源 URL（`Lg/n/i/a;` Constants.kt `<clinit>`）：
 `https://m1.mmlu1.site/host.txt`、`https://n1.mmlu1.site/host.txt`
@@ -475,7 +475,13 @@ GET    (StreamApi @Url)   @Streaming, Header:Authorization, Url(String), host(St
 | 2 | `https://api1.ook.cool` | `miOBGgHNWhpt2` | `https://stream-encrypt1.mmlu4.site` | 国内线路2 |
 
 > chain 实测值 = `miOBGgHNWhpt2`（来自 host.txt）。`BaseDomain.k = miXFCHEoSXJ.M` 是另一处静态默认串，**不是**链值。
-> `tsurl` 主机即拉流时 `?host=` 的取值，决定服务端为哪台 CDN 主机签名。
+> `tsurl` 主机名义上是拉流时 `?host=` 的取值，决定服务端为哪台 CDN 主机签名。
+>
+> ⭐ **但 `tsurl=stream-encrypt1.*` 实测不可用（2026-10-17）**：把它当 `?host=` 传时，服务端会把
+> AV 的 `key.php` 与 `*.ts` 签名在 `stream-encrypt1.*` 上，而该域对这两者**一律 403**
+> （实测 `GHOSTFATHER-0008` 的 key.php/.ts 均 403、110B 错误页）。正确做法是把 `?host=`
+> **归一化为 `na.mmlu1.site`**（AV/NS 均 200；NS 端点本就忽略 `?host=` 固定回 `na.mmlu1.site`）。
+> 客户端实现见 `StreamService.buildM3u8Url` 的 `_streamHost` 归一化 + `DomainStore` 默认值。
 
 ### 9B.2 取媒体路径（⭐v3 与 v2 两条路，分片签名不同）
 
@@ -513,9 +519,11 @@ GET  {line.url}{media_path}?host={host}&chain={line.chain}
 Header: Authorization: Bearer <token>
 ```
 
-- `host` 取 `tsurl` 主机（如 `na.mmlu1.site` / `stream-encrypt1.mmlutech.xyz`）；
-  实测 v3 路径下 `host` 填任一线路主机都得到同一份 `na.mmlu1.site` 分片；**`host` 缺省会失败**
-  （连接被重置），务必带上。
+- `host` **固定取 `na.mmlu1.site`**（⭐ 不要用 host.txt 的 `tsurl=stream-encrypt1.*`，见 §9B.1）：
+  - NS 路径（`/v3/nsanimat/media/...`）：服务端**无视** `host`，恒回 `na.mmlu1.site` 分片；
+  - AV 路径（`/v1/animat/media/...`）：服务端**按 `?host=` 签名** —— `host=na.mmlu1.site` 时
+    `key.php`(16B) 与 `*.ts` 均 **200**；`host=stream-encrypt1.*` 时二者均 **403**；
+  - `host` 缺省/为空 → 返回 **HTML 错误页**（非 m3u8），务必带上。
 - 响应 `content-type: text/plain`，带 `x-app-name: app` + `x-response-length`
   → 复用 **§4 标准响应解密**（key=`md5hex_zp(apiKey)`，iv=`G2(x-response-length)`）；
   注意 key/iv 都是 **32/16 字符按 ASCII 直接当字节**（不 hex 解码）。
@@ -534,7 +542,7 @@ https://na.mmlu1.site/apen/<avkey>/ts/<avkey>-0.ts
 ...（数十~数百个分片）
 ```
 - URI 可能省略 `https://` 前缀（v2/AV 路径常见，形如
-  `URI="stream-encrypt1.mmlutech.xyz/apen/.../key.php?Expires=...&Key-Pair-Id=..."`）；
+  `URI="na.mmlu1.site/apen/.../key.php?Expires=...&Key-Pair-Id=..."`）；
   **解析时必须补全 scheme**，否则请求报 `DioException: No host specified in URI`。
   分片行也可能为协议相对 `//host/...` → 补 `https:`。无签名 URL（v3 路径）可直接下载。
 
@@ -650,6 +658,9 @@ App 启动本地 HTTP 服务 `http://localhost:1140`，把播放地址指到本�
 - 阅读：`GET v3/photo/read?id={id}` → `{data:[{image_path,key,iv}...]}`（**逐图 key/iv**）。
 - 解密：**AES-256-CBC**，`key=Base64.decode(key)`、`iv=Base64.decode(iv)`，默认 PKCS7。
   实测：封面 30528B → `ffd8ffe1`；图片 470000B → `ffd8ffe1`。**[实测]**
+- ⚠ **`v3/photo/read` 只返回页表**（`{data:[...]}`，**无 `id`/`name`/`cover`**）：故详情页
+  item 需补回传入 `id`，并将**首张图**（`data[0]`）当预览封面——否则详情页预览区永远空白
+  （列表接不接触到都无所谓；`photo/similar` 是拿相似作品的独立接口）。见 `ContentRepo.detail` 图集分支。
 
 ### 9C.6 小说
 

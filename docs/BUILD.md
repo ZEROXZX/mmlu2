@@ -396,6 +396,30 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 
 ---
 
+### 6j. 动漫下载分片报 403 / 图集·漫画「复制链接」要 zip【fix9】
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 动漫下载 `分片 0/291 · 0B · Bad state: 拉取失败: https://stream-encrypt1.mmlutech.xyz/apen/<avkey>/key.php?...`（**HTTP 403**） | host.txt 的 `stream[].tsurl`（`stream-encrypt1.mmlutech.xyz` / `stream-encrypt1.mmlu4.site`）被当作 `?host=` 传，服务端据此把 **AV** 的 `key.php` 与 `*.ts` 签在该域上；而该域对这两者**一律 403**（实测 `GHOSTFATHER-0008` key/分片均 403、110B 错误页）。`host=na.mmlu1.site` 时 key(16B)/分片(1.2MB) 均 **200** | `StreamService.buildM3u8Url` 新增 `_streamHost` 归一化：`?host=` 一律转 `na.mmlu1.site`（`stream-encrypt*` 与空值→`na.mmlu1.site`，其它可用主机保持原样）；`DomainStore.streamTsUrl` 默认值改 `na.mmlu1.site`。NS 端点本就忽略 `?host=`（恒回 `na.mmlu1.site`），不受影响 |
+| 图集/漫画「复制链接」给出的是**单张首图**密文地址+密钥，非 zip | 服务端**无 zip 接口**，zip 是 App 本地解密后打包产物 | 详情页 `_copyLinks` 对图集/漫画改为**即时打包**：新增 `DownloadManager.packImages`（并行下载→解密→`Archive`+`ZipEncoder`→写 `Download/mmlu/<分类>/<标题>.zip`，不建任务/不发通知），完成后「解密后链接」= 该本地 **zip 路径**；期间弹「正在打包 zip…」进度框。小说仍是首章密文；动漫不变 |
+
+> 诊断脚本：`tools/probe_stream.py` / `tools/diag2.py`（对同一 m3u8 轮询 `host=na.mmlu1.site` 与 `host=stream-encrypt1.*`，直取 key/分片看状态码）。
+> 契约测试：`test/stream_host_test.dart`（归一化）、`test/download_task_test.dart`（`packImages` 空页抛错）。
+
+---
+
+### 6k. 删记录连带删文件 / 无搜索历史 / 图集详情预览不显示【fix10】
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 删除下载记录时，本地已下载文件也被删掉 | `DownloadManager.remove` 会 `deleteLocal(outputPath)` 并清 `*.ts/mp4/zip/txt` 与相册导出；历史区 `_deleteOne`/`_deleteMany` 也 `deleteLocal(filePath)` | **记录与文件解耦**：`remove` 只删任务 + R2 记录 + 临时分片目录 `.parts_<id>`，保留成品与相册；`_deleteOne`/`_deleteMany` 不再删文件；删除按钮 tooltip 改「删除记录（保留文件）」。要清空间请自行到文件管理器删 |
+| 没有搜索历史功能 | 未持久化关键词 | 新增 `SearchHistoryStore`（本地 SharedPreferences，**无数量上限**、去重置顶、支持逐条删/清空）+ `AppContainer` 注入；搜索页空闲时显示历史 `InputChip`（点按重搜、✕ 删除、「清空」），搜索成功后写入 |
+| 图集详情页预览图片不显示（但点「浏览图集」能正常看） | `v3/photo/read` 只返回 `{data:[{image_path,key,iv}...]}`，**无 id/name/cover** → 详情 item 无封面 → `CoverImage` 只显示占位图 | `ContentRepo.detail` 图集分支：补回传入 id，并以**首张图**（scheme=perImage）充当详情页预览封面；详情页标题用列表页传入的 `fallbackTitle` 兜底（`_title`），`浏览图集` 也带上标题 |
+
+> 契约测试：`test/download_task_test.dart`（`remove` 保留成品文件）、`test/search_history_test.dart`（无上限/去重/删除）、`test/content_repo_animat_test.dart`（图集详情首图补封面 + 补 id）。
+
+---
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
@@ -413,6 +437,11 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 下载页找不到「复制链接」入口 / 动漫想分开选集下载 | 入口隐式、只有全集按钮 | §6i：任务行显式「复制下载链接」按钮；详情拆「合集一起下载 / 分开下载」 |
 | 偶发网络抖动请求直接失败 | `_send` 未对瞬时故障重试 | §6i：连接/超时/空响应退避重试（≤4 次） |
 | 登录失败无明确提示 | 未解析错误信封，200 信封被误判成功 | §6i：`extractApiMessage` + 无 token 抛错 |
+| 动漫下载分片/密钥 **403**（URL 在 `stream-encrypt1.*`） | `?host=` 用了 host.txt 的 `tsurl`（该域对 AV 的 key/分片一律 403） | §6j：`buildM3u8Url` 归一化 `?host=na.mmlu1.site` |
+| 图集/漫画「复制链接」给的是单图而非 zip | 复制时未打包 | §6j：详情页复制链接即时打包为本地 zip 并给出路径 |
+| 删下载记录连带删了本地文件 | 记录与文件未解耦 | §6k：只删记录，保留成品文件（`remove`/历史删除均不再 `deleteLocal`） |
+| 没有搜索历史 | 关键词未持久化 | §6k：`SearchHistoryStore`（无上限 + 逐条删/清空） |
+| 图集详情页预览图空白（但能浏览） | `photoRead` 只给页表、无 cover | §6k：用**首张图**当预览封面 + 标题用列表页兜底 |
 | 播放 `ExoPlaybackException: Source error` | 本地代理 127.0.0.1 明文被系统拦截 | §6g：network_security_config 放行 localhost |
 | 小说列表空白图 / 阅读 403 | 小说无封面仍渲染图；正文取错域(ac1) | §6g：fiction 纯文字卡 + 正文走 fiction 域 |
 | 收藏第一个漫画无封面 | ns 封面 key/iv 为 Base64 逐图 | §6g：`_coverOf` 自动切 perImage |

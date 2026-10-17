@@ -36,11 +36,12 @@ class DomainStore {
   String get imgReferer => _prefs.getString('domain_img_referer') ?? '';
 
   /// 流媒体线路：拉 m3u8 用的 API 域、`?host=` 用的 CDN 主机、chain 串。
-  /// 默认取沙箱实测可用值（docs/PROTOCOL.md §9B.1）。
+  /// 默认取沙箱实测可用值（docs/PROTOCOL.md §9B.1）：`?host=` 用 `na.mmlu1.site`
+  /// （host.txt 下发的 `stream-encrypt1.*` 对 AV 密钥/分片会 403，见 StreamService）。
   String get streamFetchUrl =>
       _prefs.getString('stream_fetch_url') ?? 'https://api1.mmlu.services';
   String get streamTsUrl =>
-      _prefs.getString('stream_ts_url') ?? 'https://stream-encrypt1.mmlutech.xyz';
+      _prefs.getString('stream_ts_url') ?? 'na.mmlu1.site';
   String get streamChain =>
       _prefs.getString('stream_chain') ?? 'miOBGgHNWhpt2';
 

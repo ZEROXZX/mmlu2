@@ -169,6 +169,34 @@ void main() {
     });
   });
 
+  group('删除记录保留本地文件', () {
+    test('remove 只删任务与记录，不动成品文件', () async {
+      mgr.addVideo(item: item(), mediaPath: '/a.m3u8', quality: '720');
+      final t = mgr.tasks.first;
+      final f = File('${Directory.systemTemp.path}/mmlu_keep_${t.id}.ts')
+        ..writeAsBytesSync([1, 2, 3]);
+      t.status = DownloadStatus.done;
+      t.outputPath = f.path;
+
+      await mgr.remove(t);
+
+      expect(mgr.tasks, isEmpty);
+      expect(store.load(), isEmpty, reason: '记录应删除');
+      expect(f.existsSync(), isTrue, reason: '成品文件应保留');
+      f.deleteSync();
+    });
+  });
+
+  group('图集/漫画即时打包（详情页「复制链接」按需打包）', () {
+    test('无图片时抛 StateError', () {
+      expect(
+        () => mgr.packImages(
+            kind: ContentKind.photo, title: 't', id: 'photo_1', pages: const []),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
   group('失败与重试', () {
     test('runner 抛异常 → failed + error + 保留记录', () async {
       final failing = makeManager(

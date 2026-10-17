@@ -43,18 +43,30 @@ class _DetailPageState extends State<DetailPage> {
         future: _future,
         onRetry: () => setState(() =>
             _future = context.read<AppContainer>().contentRepo.detail(widget.kind, widget.id, source: widget.source)),
-        builder: (context, detail) => _Body(kind: widget.kind, id: widget.id, detail: detail),
+        builder: (context, detail) => _Body(
+            kind: widget.kind,
+            id: widget.id,
+            detail: detail,
+            fallbackTitle: widget.title),
       ),
     );
   }
 }
 
 class _Body extends StatefulWidget {
-  const _Body({required this.kind, required this.id, required this.detail});
+  const _Body({
+    required this.kind,
+    required this.id,
+    required this.detail,
+    this.fallbackTitle,
+  });
 
   final ContentKind kind;
   final int id;
   final ContentDetail detail;
+
+  /// 详情接口未回传标题时（如 `photoRead` 只给页表）用列表页传入的标题兜底。
+  final String? fallbackTitle;
 
   @override
   State<_Body> createState() => _BodyState();
@@ -81,7 +93,15 @@ class _BodyState extends State<_Body> {
     );
   }
 
+  /// 标题：详情接口未回传时（图集 `photoRead` 只有页表）用列表页标题兜底。
+  String _title(ContentItem item) {
+    if (item.title.isNotEmpty) return item.title;
+    final fb = widget.fallbackTitle;
+    return (fb != null && fb.isNotEmpty) ? fb : widget.kind.label;
+  }
+
   Widget _header(ContentItem item) {
+    final title = _title(item);
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
@@ -93,7 +113,7 @@ class _BodyState extends State<_Body> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 if (item.tags.isNotEmpty)
                   Text('标签：${item.tags.join(' / ')}', style: const TextStyle(color: Colors.grey))
@@ -364,7 +384,8 @@ class _BodyState extends State<_Body> {
       padding: const EdgeInsets.all(12),
       child: FilledButton.icon(
         onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ReaderPage(kind: widget.kind, item: d.item, title: d.item.title),
+          builder: (_) =>
+              ReaderPage(kind: widget.kind, item: d.item, title: _title(d.item)),
         )),
         icon: const Icon(Icons.photo_library_outlined),
         label: const Text('浏览图集'),
@@ -620,10 +641,11 @@ class _BodyState extends State<_Body> {
     _toast('已加入下载队列，可在「下载」页取消');
   }
 
-  /// 复制下载链接：**下载前**即可在详情页获取三条链接（无需先下载）。
+  /// 复制下载链接：**下载前**即可在详情页获取链接（无需先下载）。
   ///
   /// - 动漫：选分集+画质 → 加密(m3u8)/密钥(key.php)/解密后(本机串流代理地址)；
-  /// - 小说/图集/漫画：取首个资源的密文地址与密钥。
+  /// - 小说：取首章密文地址；
+  /// - 图集/漫画：即时下载→解密→打包为本地 zip，「解密后链接」给出 zip 路径。
   Future<void> _copyLinks(ContentDetail d) async {
     final c = context.read<AppContainer>();
     if (widget.kind == ContentKind.animat) {
@@ -670,40 +692,92 @@ class _BodyState extends State<_Body> {
       return;
     }
 
-    // 小说 / 图集 / 漫画：取首个资源的密文地址与密钥。
-    String? enc;
-    String? key;
+    // 小说：取首章密文地址（无本地打包产物）。
     if (widget.kind == ContentKind.fiction) {
       if (d.fictionChapters.isEmpty) {
         _toast('无章节');
         return;
       }
-      enc = c.resourceService.urlFor(widget.kind, d.fictionChapters.first.path);
-    } else {
-      final pages = <ReadPage>[];
-      if (widget.kind == ContentKind.photo) {
-        pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
-      } else if (d.chapters.isNotEmpty) {
-        pages.addAll(await c.contentRepo.readPages(widget.kind,
-            id: widget.id, chapterId: d.chapters.first.chapterId));
-      } else {
-        pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
-      }
-      if (pages.isEmpty) {
-        _toast('无图片');
-        return;
-      }
-      enc = c.resourceService.urlFor(widget.kind, pages.first.path);
-      key = pages.first.key;
+      final enc = c.resourceService.urlFor(
+          widget.kind, d.fictionChapters.first.path);
+      if (!mounted) return;
+      await showDownloadLinks(
+        context,
+        title: _title(d.item),
+        encrypted: enc,
+        emptyHint: '暂无可复制链接',
+      );
+      return;
     }
+
+    // 图集 / 漫画：复制时即时下载→解密→打包为本地 zip，「解密后链接」给出 zip 路径。
+    final pages = <ReadPage>[];
+    if (widget.kind == ContentKind.photo) {
+      pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
+    } else if (d.chapters.isNotEmpty) {
+      for (final ch in d.chapters) {
+        pages.addAll(await c.contentRepo.readPages(widget.kind,
+            id: widget.id, chapterId: ch.chapterId));
+      }
+    } else {
+      pages.addAll(await c.contentRepo.readPages(widget.kind, id: widget.id));
+    }
+    if (pages.isEmpty) {
+      _toast('无图片');
+      return;
+    }
+    final enc = c.resourceService.urlFor(widget.kind, pages.first.path);
+    final key = pages.first.key;
+    final scheme = widget.kind == ContentKind.comicNs
+        ? ImageScheme.nsComic
+        : ImageScheme.perImage;
     if (!mounted) return;
+    final zipPath = await _packImages(_title(d.item), pages, scheme);
+    if (zipPath == null || !mounted) return;
     await showDownloadLinks(
       context,
-      title: d.item.title,
+      title: _title(d.item),
       encrypted: enc,
       key: key,
-      emptyHint: '暂无可复制链接',
+      decrypted: zipPath,
     );
+  }
+
+  /// 带进度弹窗的「图集/漫画」即时打包；返回本地 zip 路径，失败返回 null。
+  Future<String?> _packImages(
+      String title, List<ReadPage> pages, ImageScheme scheme) async {
+    final mgr = context.read<DownloadManager>();
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: 16),
+            Text('正在打包 zip…'),
+          ]),
+        ),
+      ),
+    );
+    try {
+      return await mgr.packImages(
+        kind: widget.kind,
+        title: title,
+        id: '${widget.kind.tag}_${widget.id}',
+        pages: pages,
+        scheme: scheme,
+      );
+    } catch (e) {
+      _toast('打包失败：$e');
+      return null;
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
   }
 
   /// 复制**单个分集**的下载链接（详情页分集行内「复制下载链接」按钮）。

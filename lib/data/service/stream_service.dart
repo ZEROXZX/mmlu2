@@ -48,12 +48,23 @@ class StreamService {
   final String apiKey;
   final Dio _dio;
 
+  /// `?host=` 归一化后的 CDN 主机。
+  ///
+  /// host.txt 下发的 `stream` 线路 `tsurl`（`stream-encrypt1.mmlutech.xyz` /
+  /// `stream-encrypt1.mmlu4.site`）实测会让服务端把密钥/分片签在该域上，而该域
+  /// 对 AV 动漫的 key.php 与 .ts **一律 403**；`na.mmlu1.site` 对 AV/NS 均 200
+  /// （NS 端点还会忽略 `host` 参数，固定回 `na.mmlu1.site`）。故此处统一归一化。
+  static String _streamHost(String raw) {
+    final host =
+        raw.replaceFirst(RegExp(r'^https?://'), '').replaceAll('/', '').trim();
+    if (host.isEmpty || host.startsWith('stream-encrypt')) return 'na.mmlu1.site';
+    return host;
+  }
+
   /// 构造 m3u8 请求 URL（供 R1.4「加密链接」展示）。
   String buildM3u8Url(String mediaPath, {String? lineUrl, String? host, String? chain}) {
     final fetchUrl = lineUrl ?? domains.streamFetchUrl;
-    final h = (host ?? domains.streamTsUrl)
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .replaceAll('/', '');
+    final h = _streamHost(host ?? domains.streamTsUrl);
     final c = chain ?? domains.streamChain;
     final root =
         fetchUrl.endsWith('/') ? fetchUrl.substring(0, fetchUrl.length - 1) : fetchUrl;
@@ -94,8 +105,9 @@ class StreamService {
 
   /// 把 m3u8 里的相对/协议相对地址补全为绝对 URL。
   ///
-  /// AV 动漫的 `#EXT-X-KEY` URI 常为 `stream-encrypt1.mmlutech.xyz/...`（无 scheme），
-  /// 直接请求会报 `No host specified in URI`；分片亦可能为 `//host/...`。
+  /// m3u8 中的 `#EXT-X-KEY` URI 与分片多为**无 scheme** 的 `host/path`（如
+  /// `na.mmlu1.site/apen/.../key.php?...`），直接请求会报 `No host specified in
+  /// URI`；分片亦可能为 `//host/...`。
   static String _abs(String u) {
     if (u.startsWith('http://') || u.startsWith('https://')) return u;
     if (u.startsWith('//')) return 'https:$u';

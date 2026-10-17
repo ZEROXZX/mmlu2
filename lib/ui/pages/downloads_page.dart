@@ -223,14 +223,14 @@ class _DownloadsPageState extends State<DownloadsPage> {
         ];
       case DownloadStatus.done:
         return [
-          btn(Icons.delete_outline, '删除', () => mgr.remove(t)),
+          btn(Icons.delete_outline, '删除记录（保留文件）', () => mgr.remove(t)),
         ];
       case DownloadStatus.failed:
       case DownloadStatus.cancelled:
         return [
           if (t.canRetry)
             btn(Icons.refresh, '重试', () => mgr.retry(t)),
-          btn(Icons.delete_outline, '删除', () => mgr.remove(t)),
+          btn(Icons.delete_outline, '删除记录（保留文件）', () => mgr.remove(t)),
         ];
     }
   }
@@ -324,7 +324,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
             ),
           ),
           IconButton(
-            tooltip: '删除',
+            tooltip: '删除记录（保留文件）',
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _deleteOne(context, r),
           ),
@@ -347,9 +347,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
     final mgr = context.read<DownloadManager>();
     final t = mgr.byId(r.id);
     if (t != null && t.isActive) return; // 进行中任务走任务区的取消
+    // 只删记录，保留本地文件（用户确认）。
     if (t != null) await mgr.remove(t);
     await c.downloadStore.removeMany([r.id]);
-    await c.downloadService.deleteLocal(r.filePath);
     if (mounted) setState(() => _selected.remove(r.id));
   }
 
@@ -360,11 +360,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
     for (final r in all.where((r) => _selected.contains(r.id))) {
       final t = mgr.byId(r.id);
       if (t != null && t.isActive) continue;
-      if (t != null) {
-        await mgr.remove(t);
-      } else {
-        await c.downloadService.deleteLocal(r.filePath);
-      }
+      // 只删记录，保留本地文件（用户确认）。
+      if (t != null) await mgr.remove(t);
     }
     await c.downloadStore.removeMany(_selected.toList());
     if (mounted) setState(_selected.clear);
