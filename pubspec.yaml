@@ -1,0 +1,28 @@
+name: mmlu_client
+description: 第三方客户端骨架 (manmanlu2 v1.5.20 协议实现)
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dio: ^5.4.0
+  crypto: ^3.0.3
+  pointycastle: ^3.7.3
+  shared_preferences: ^2.2.2
+  provider: ^6.1.1
+  path: ^1.9.0
+  path_provider: ^2.1.2
+  archive: ^3.6.1
+  video_player: ^2.14.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
