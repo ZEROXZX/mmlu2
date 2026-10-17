@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      # 关闭 Gradle 文件监听，消除 "Already watching path" 噪音
+      GRADLE_OPTS: "-Dorg.gradle.vfs.watch=false"
     steps:
       - uses: actions/checkout@v4
 
@@ -35,22 +37,32 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Flutter clean
+        run: flutter clean
+
       - name: Flutter analyze
         run: flutter analyze
 
+      - name: Flutter test
+        run: flutter test
+
       - name: Prepare signing keystore
-        if: startsWith(github.ref, 'refs/tags/') && env.KEYSTORE_BASE64 != ''
+        # 只要配了 KEYSTORE_BASE64 就签名（push / tag 都签）；
+        # 没配 secret 则跳过，输出未签名包，CI 不崩
+        if: env.KEYSTORE_BASE64 != ''
         run: |
           echo "${{ env.KEYSTORE_BASE64 }}" | base64 -d > android/app/mmlu.jks
-          cat > android/app/key.properties <<EOF
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=mmlu.jks
-          EOF
+          printf '%s\n' \
+            "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" \
+            "keyPassword=${{ secrets.KEY_PASSWORD }}" \
+            "keyAlias=${{ secrets.KEY_ALIAS }}" \
+            "storeFile=mmlu.jks" \
+            > android/app/key.properties
 
       - name: Build Android Release APK
-        run: flutter build apk --release --target-platform=android-arm64
+        # 加 --verbose 是为了拿到 ffmpeg_kit_flutter 真正的报错；
+        # 定位问题后可去掉 --verbose 减少日志量
+        run: flutter build apk --release --target-platform=android-arm64 --verbose
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
@@ -72,17 +84,21 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Flutter analyze
-        run: flutter analyze
+      - name: Flutter clean
+        run: flutter clean
 
       - name: Build Windows Release
         run: flutter build windows --release
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/windows-release.zip
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: build/windows/x64/runner/Release/**
+          path: build/windows-release.zip
 
   release:
     needs: [build-android, build-windows]
@@ -98,4 +114,5 @@ jobs:
         with:
           files: |
             android-apk/*.apk
-            windows-build/*
+            windows-build/*.zip
+
