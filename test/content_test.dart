@@ -138,6 +138,47 @@ https://na.mmlu1.site/apen/ABC/ts/ABC-1.ts
       expect(item.cover!.scheme, ImageScheme.perImage);
       expect(item.cover!.key, 'QQ==');
     });
+
+    test('漫画 ns 封面若为 Base64 密钥 → 自动改用逐图方案', () {
+      // 列表接口是 64 位 hex（=固定密钥）；收藏等接口可能改成 Base64。
+      final b64 = base64.encode(
+        Uint8List.fromList(List<int>.generate(32, (i) => i)),
+      );
+      final item = ContentItem.fromJson(ContentKind.comicNs, {
+        'id': 7,
+        'title': '收藏漫画',
+        'cover': {
+          'cover_path': '/p/c.jpg',
+          'key': b64,
+          'iv': 'CA87D9018CC39C86FA25E7876AC079CB',
+        },
+      });
+      expect(item.cover!.scheme, ImageScheme.perImage);
+      expect(item.cover!.key, b64);
+    });
+
+    test('漫画 ns 封面 hex 密钥仍走固定方案', () {
+      final item = ContentItem.fromJson(ContentKind.comicNs, {
+        'id': 8,
+        'title': '漫画',
+        'cover': {
+          'cover_path': '/p/c.jpg',
+          'key': MmluKeys.nsComicDecryptKey,
+          'iv': MmluKeys.nsComicDecryptIv,
+        },
+      });
+      expect(item.cover!.scheme, ImageScheme.nsComic);
+    });
+
+    test('小说条目没有封面（cover 为空）', () {
+      final item = ContentItem.fromJson(ContentKind.fiction, {
+        'id': 3,
+        'title': '小说',
+        'filepath': '/zhcn/a.txt',
+      });
+      expect(item.cover, isNull);
+      expect(item.thumbPath, isNull);
+    });
   });
 
   group('相似作品（samelike / photo similar）', () {

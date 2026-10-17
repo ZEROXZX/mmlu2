@@ -232,6 +232,11 @@ App 首次进入时**无 token**，但除 `v2/register` 外所有接口都强制
    key = SHA-256( "hcg" + universal_id + "hcg" ).hexdigest()      # 64 位小写 hex，务必一致
    -> {"success":{"token":<游客token>, "user_id":<游客uid>, "universal_id":<uuid>}}
 
+①b 激活会话（Authorization: Bearer <游客token>，★注册后必做）
+   GET v2/combine/startup?platform=2
+   -> {"success":{"userInfo":{...},...}}
+   不做这步：游客 token 访问内容类接口会回 200 `{"error":{"msg":"unidentify"}}`（并非 495）。
+
 ② 账号登录（Authorization: Bearer <游客token>）
    POST v2/user/login
    body = {"country_codes":"86","phone":"<手机>","password":"<明文密码>","platform":2}
@@ -265,14 +270,15 @@ App 首次进入时**无 token**，但除 `v2/register` 外所有接口都强制
 |---|---|---|
 | 无/空/非 Bearer 的 Authorization | 499 | `{"error":"缺少 Token 參數"}` |
 | `Bearer ` + 非法 token | 498 | `{"error":"Token 格式錯誤"}` |
-| 游客 token 访问内容类接口（如 `v2/comic/banner`） | 495 | `{"error":{"msg":"unidentify"}}` |
+| 游客 token **未 startup** 访问内容类接口 | 200 | `{"error":{"msg":"unidentify"}}`（注册后未激活） |
 | 注册字段缺失 | 401 | `{"error":{"universal_id":["The universal id field is required."]}}` |
 | 注册 key 错误 | 401 | `{"error":{"msg":"key error"}}` |
 | 登录成功 | 200 | `{"success":{"token":…,"user_id":…}}` |
 
-> **区分 token 等级**：`v2/common/appinfo` 等配置类接口**游客 token 即可**；
-> 内容类接口（`v2/comic/banner`、payment 等）**必须账号 token**，否则 495 `unidentify`。
-> 故第三方客户端必须完成「注册→登录」才能拿到完整功能。
+> **游客 token 激活后即可浏览内容**（实测 2026-10-17）：`register → startup` 后，
+> 游客 token 请求 `v3/comic/ns/new`、`v3/nsanimat/new`、`v3/fiction/new`、`v2/comic/banner`
+> 均正常返回数据；播放 m3u8/分片与解密也不依赖账号。**账号仅影响收藏/历史/VIP**。
+> 未 startup 直接访问内容类接口才会得到 `unidentify`。故第三方客户端可「免登录」浏览。
 
 ---
 
@@ -484,6 +490,12 @@ GET    (StreamApi @Url)   @Streaming, Header:Authorization, Url(String), host(St
 > **第三方客户端首选 v3**：分片无签名、免鉴权、可直下（`key.php` 与 `*.ts` 均公开可取）。
 > v3 与 v2 的 `media` 值（avkey）可能不同；`directory[]` 同理带 `media`。
 
+> ⭐ **详情统一用 v3**：搜索/收藏结果里的动漫 `source='av'`，但如果客户端据此改走
+> `v2/combine/animat`，media 就是**已失效的 `/v1/animat/media/...`（该 URL 现返回 HTML）**，
+> 表现为「播放 Source error / 只有预告片」。实测 `v3/nsanimat/internal/{id}` 对**任意 id**
+> （含 AV id 如 7559、7683）都返回可播放的 `/v3/nsanimat/media/...` 三档。故详情一律 v3，
+> 忽略 source。
+
 ### 9B.3 拉取并解密 m3u8
 
 ```
@@ -616,6 +628,9 @@ App 启动本地 HTTP 服务 `http://localhost:1140`，把播放地址指到本�
   `iv=hex("CA87D9018CC39C86FA25E7876AC079CB")`（= 密钥常量 `nsComicDecryptKey/Iv`）。
   其 `cover.key/iv` 字段值正是这两个常量（hex）。封面与阅读页同密钥。
   实测：封面 17792B → `ffd8ffdb`；页 6368B → `ffd8ffdb`。**[实测]**
+  - ⚠ **收藏等接口的 ns 封面可能改回 Base64 逐图 key/iv**（非固定 hex）。客户端
+    `_coverOf` 需检测：key 为 Base64（长度 4 的倍数、含 `+/=`、非 32/64 位纯 hex）
+  → 按 `perImage`(b64) 解，否则用固定方案；否则收藏第一个(ns)漫画会解密失败、不显示封面。
 - **av 漫画**（`source=av`）：**AES-256-CBC**，**逐图下发** `key`/`iv`（**Base64**，解出 32B/16B）。
   实测：封面 28992B → `ffd8ffe1`；页 1098224B/1806976B → `ffd8ffe1`。**[实测]**
 
@@ -631,6 +646,10 @@ App 启动本地 HTTP 服务 `http://localhost:1140`，把播放地址指到本�
 - 列表：`v3/fiction/new`/`ranking`/`recommend`、`v2/fiction/summary/{id}` → item 含 `title/desc/filepath/filepath_tw`。
 - 正文：`GET {fiction host}{filepath}`（如 `https://fiction1.mmlutech.xyz/zhcn/AU9/<hash>.txt`）。
 - **明文 UTF-8**（无加密；`filepath`=简体，`filepath_tw`=繁体）。实测 131620B，直接是中文正文。**[实测]**
+- ⚠ **正文必须走 fiction 域**（`fiction1.mmlutech.xyz` / `fiction1.mmlu4.site`）。
+  实测同一 `filepath` 用 `ac1.mmlutech.xyz`（comic 域）→ **403**，用 `ac1` 拼接还会 `Connection reset`。
+  客户端 `ResourceService.urlFor` 对 `ContentKind.fiction` 取 `apiFiction`。
+- 小说条目**无 `cover` 字段**（列表/详情都没有），UI 不应渲染封面图。
 
 ### 9C.7 资源解密速查
 

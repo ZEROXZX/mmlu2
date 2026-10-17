@@ -4,6 +4,7 @@ import '../auth/token_store.dart';
 import '../constants/mmlu_keys.dart';
 import '../crypto/mmlu_crypto.dart';
 import '../domain/domain_store.dart';
+import '../domain/endpoints.dart';
 import 'api_exception.dart';
 import 'decrypt_interceptor.dart';
 import 'header_interceptor.dart';
@@ -123,6 +124,71 @@ class ApiClient {
   final String apiKey;
   final String secureKey;
   late final Dio dio;
+
+  Future<void>? _registering;
+
+  /// 游客 token 是否存在。
+  bool get hasToken {
+    final t = tokenStore.token;
+    return t != null && t.isNotEmpty;
+  }
+
+  /// 确保存在一个 token：无（或 [force]）时做一次 `v2/register` 设备注册，
+  /// 拿到游客 token 并存储。并发调用共享同一次请求。
+  ///
+  /// 对应参考实现 `register()`：启动即注册，使内容接口不再因缺
+  /// `Authorization` 而返回 499「缺少 Token 参数」。
+  Future<void> ensureGuestToken({bool force = false}) {
+    if (!force && hasToken) return Future<void>.value();
+    return _registering ??= _doRegister().whenComplete(() {
+      _registering = null;
+    });
+  }
+
+  Future<void> _doRegister() async {
+    final uid = tokenStore.universalId;
+    final body = <String, dynamic>{
+      'universal_id': uid,
+      'platform': 2,
+      'model': 'SM-G975F',
+      'key': MmluCrypto.sha256Hex('hcg${uid}hcg'),
+      'install_channel': 'com.android.vending',
+      'install': '',
+      'source': '',
+    };
+    final base = domainStore.urlOf(DomainType.apiData);
+    final root = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    try {
+      final r = await dio.post(
+        '$root/${Endpoints.register}',
+        data: body,
+        options: Options(extra: {'noAuth': true}),
+      );
+      final data = r.data;
+      String? token;
+      if (data is Map) {
+        final inner = data['data'] is Map
+            ? (data['data'] as Map).cast<String, dynamic>()
+            : data.cast<String, dynamic>();
+        token = inner['token']?.toString();
+      }
+      if (token != null && token.isNotEmpty) {
+        await tokenStore.save(token);
+        // 注册后必须调一次 startup 激活会话，否则内容接口返回
+        // `{"error":{"msg":"unidentify"}}`（参考实现 register() 内同样调用）。
+        try {
+          await dio.get('$root/${Endpoints.startup}',
+              queryParameters: {'platform': 2});
+        } catch (_) {}
+      }
+    } on DioException catch (e) {
+      throw ApiException(
+        e.response?.statusCode ?? -1,
+        '游客注册失败: ${e.message}',
+        body: e.response?.data,
+      );
+    }
+  }
 
   /// 解析并按需解密 host.txt，返回明文 JSON 字符串。
   Future<String> fetchAndDecryptHostTxt() async {

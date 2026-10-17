@@ -12,6 +12,8 @@ class ContentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 小说条目没有封面（无 `cover` 字段），图片位会变成破图；改为纯文字卡片。
+    if (item.kind == ContentKind.fiction) return _FictionTile(item: item, onTap: onTap);
     return InkWell(
       onTap: onTap,
       child: Column(
@@ -28,6 +30,58 @@ class ContentTile extends StatelessWidget {
             style: const TextStyle(fontSize: 13),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 小说专用纯文字卡片（无封面）。
+class _FictionTile extends StatelessWidget {
+  const _FictionTile({required this.item, required this.onTap});
+
+  final ContentItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sub = (item.tag != null && item.tag!.isNotEmpty)
+        ? item.tag!
+        : (item.desc ?? '');
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.menu_book_outlined, size: 22, color: scheme.primary),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Text(
+                item.title,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (sub.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  sub,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -81,9 +135,17 @@ class HorizontalContentRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CoverImage(item: it, width: 110, height: 150),
+                  if (it.kind == ContentKind.fiction)
+                    SizedBox(
+                      width: 110,
+                      height: 150,
+                      child: _FictionTile(item: it, onTap: () => onTap(it)),
+                    )
+                  else
+                    CoverImage(item: it, width: 110, height: 150),
                   const SizedBox(height: 4),
-                  Text(it.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                  if (it.kind != ContentKind.fiction)
+                    Text(it.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
                 ],
               ),
             ),

@@ -87,19 +87,47 @@ class ApiService {
             queryParameters: query,
           ));
 
+  /// 确保存在 token（游客自动注册）。启动时与 499 重试时调用。
+  Future<void> ensureGuestToken({bool force = false}) =>
+      _client.ensureGuestToken(force: force);
+
   Future<Object?> _send(Future<Response<dynamic>> Function() f) async {
     try {
       final r = await f();
+      // 游客会话未激活（注册后未 startup）时服务端回 200 + `{error:{msg:unidentify}}`：
+      // 重新注册（含 startup）后原样重试一次。
+      if (_isUnidentify(r.data) && !_client.tokenStore.isLoggedIn) {
+        await _client.ensureGuestToken(force: true);
+        return (await f()).data;
+      }
       return r.data;
     } on DioException catch (e) {
       final err = e.error;
-      if (err is ApiException) throw err;
-      throw ApiException(
-        e.response?.statusCode ?? -1,
-        e.message ?? 'network error',
-        body: e.response?.data,
-      );
+      final code = err is ApiException ? err.statusCode : (e.response?.statusCode ?? -1);
+      // 缺/失效 token：补一个游客 token 后原样重试一次（参考实现 call() 的自愈）。
+      if ((code == 499 || code == 495) && !_client.tokenStore.isLoggedIn) {
+        try {
+          await _client.ensureGuestToken(force: true);
+          return (await f()).data;
+        } on DioException catch (e2) {
+          _raise(e2);
+        }
+      }
+      _raise(e);
     }
+  }
+
+  static bool _isUnidentify(Object? d) =>
+      d is Map && d['error'] is Map && (d['error'] as Map)['msg'] == 'unidentify';
+
+  Never _raise(DioException e) {
+    final err = e.error;
+    if (err is ApiException) throw err;
+    throw ApiException(
+      e.response?.statusCode ?? -1,
+      e.message ?? 'network error',
+      body: e.response?.data,
+    );
   }
 
   static Map<String, dynamic> _map(Object? o) =>

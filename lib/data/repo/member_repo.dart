@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import '../../core/auth/token_store.dart';
 import '../api/api_service.dart';
 import '../models/login_body.dart';
@@ -24,10 +22,9 @@ class MemberRepo {
   Future<String> ensureToken() async {
     final existing = _tokenStore.token;
     if (existing != null) return existing;
-    final res = await registerDevice();
-    final t = res.token;
+    await _api.ensureGuestToken(force: true);
+    final t = _tokenStore.token;
     if (t == null) throw StateError('设备注册未返回 token');
-    await _tokenStore.save(t);
     return t;
   }
 
@@ -37,7 +34,7 @@ class MemberRepo {
     String model = 'Google_sdk_gphone64_arm64',
   }) async {
     final res = await _api.registerDevice(
-      universalId: universalId ?? _uuidV4(),
+      universalId: universalId ?? _tokenStore.universalId,
       model: model,
     );
     if (res.token != null) await _tokenStore.save(res.token!);
@@ -76,19 +73,5 @@ class MemberRepo {
   Future<void> officialLogout() async {
     await _tokenStore.clear();
     await registerDevice();
-  }
-
-  // ---- 工具 -------------------------------------------------------------
-
-  static final Random _rnd = Random.secure();
-
-  /// RFC 4122 v4 UUID。
-  static String _uuidV4() {
-    final b = List<int>.generate(16, (_) => _rnd.nextInt(256));
-    b[6] = (b[6] & 0x0f) | 0x40;
-    b[8] = (b[8] & 0x3f) | 0x80;
-    final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
-    return '${h.substring(0, 8)}-${h.substring(8, 12)}-'
-        '${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}';
   }
 }

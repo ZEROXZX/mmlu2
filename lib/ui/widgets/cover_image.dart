@@ -71,9 +71,13 @@ class CoverImage extends StatelessWidget {
             }
             final b = snap.data;
             if (b == null || b.isEmpty) {
+              // 无封面（如小说）或解密失败：用中性占位，不再显示破图图标。
               return const ColoredBox(
-                color: Color(0x22000000),
-                child: Icon(Icons.broken_image_outlined),
+                color: Color(0x11000000),
+                child: Center(
+                  child: Icon(Icons.image_not_supported_outlined,
+                      color: Colors.black26),
+                ),
               );
             }
             return Image.memory(b, width: width, height: height, fit: BoxFit.cover);

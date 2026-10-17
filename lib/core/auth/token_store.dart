@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// token 存储。
@@ -14,6 +16,21 @@ class TokenStore {
 
   /// 「是否已登录官方账号」标记（游客 device token 不算登录）。
   static const String _loggedInKey = 'mmlu_logged_in';
+
+  /// 设备唯一标识（游客注册用 `universal_id`，首次生成后持久化）。
+  static const String _universalIdKey = 'mmlu_universal_id';
+
+  static final Random _rnd = Random.secure();
+
+  /// 稳定的设备 universal_id（RFC4122 v4）。注册游客 token 的入参之一，
+  /// 必须跨会话保持不变，否则每次启动都会注册出新的游客账号。
+  String get universalId {
+    final v = _prefs.getString(_universalIdKey);
+    if (v != null && v.isNotEmpty) return v;
+    final id = _uuidV4();
+    _prefs.setString(_universalIdKey, id);
+    return id;
+  }
 
   String? get token {
     final v = _prefs.getString(_tokenKey);
@@ -37,4 +54,13 @@ class TokenStore {
 
   /// 供参考：底层偏好文件名（Android 上 shared_preferences 使用其插件默认名）。
   static String get prefsFileName => _prefsName;
+
+  static String _uuidV4() {
+    final b = List<int>.generate(16, (_) => _rnd.nextInt(256));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+    return '${h.substring(0, 8)}-${h.substring(8, 12)}-'
+        '${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}';
+  }
 }

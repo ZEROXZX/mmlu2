@@ -74,8 +74,9 @@ class ContentRepo {
   /// 内容详情。
   ///
   /// - 动漫：`episodes` 为 `directory[]`（含分集 media）；`item` 为 `summary[0]`。
-  ///   动漫分 `ns`（`v3/nsanimat`）与 `av`（`v2/combine/animat`）两套接口，用
-  ///   [source] 区分（`av` 的 media 路径为 `/v1/animat/...`）。
+  ///   详情**统一走 `v3/nsanimat/internal/{id}`**（含搜索/收藏里的 `source=av` 项，
+  ///   该接口对任意 id 均返回可播放的 `/v3/nsanimat/media/...`）。`source=av` 的
+  ///   `v2/combine/animat` 接口返回的 `/v1/animat/media/...` 已失效（返回 HTML）。
   /// - 漫画：`chapters` 为 `directory[]`（含 `chapter_id`）。
   /// - 小说：`fictionChapters` 为 `data[]`（含 `filepath`）。
   /// - 图集：`item` 取自返回体；页表用 [readPages]。
@@ -83,7 +84,8 @@ class ContentRepo {
     final res = await switch (kind) {
       ContentKind.comicNs => _api.comicNsDetail(id),
       ContentKind.comicAv => _api.comicAvDetail(id),
-      ContentKind.animat => source == 'av' ? _api.animatDetail(id) : _api.nsAnimatDetail(id),
+      // source='av'（搜索/收藏结果）同样用 nsanimat，避免 /v1/animat 失效路径。
+      ContentKind.animat => _api.nsAnimatDetail(id),
       ContentKind.fiction => _api.fictionSummary(id),
       ContentKind.photo => _api.photoRead(id: id),
     };
@@ -143,15 +145,25 @@ class ContentRepo {
   Future<List<ReadPage>> readPages(ContentKind kind, {required int id, int? chapterId}) async {
     switch (kind) {
       case ContentKind.comicNs:
-        final res = await _api.comicNsRead(comicId: chapterId ?? id);
+        final res = await _api.comicNsRead(
+          comicId: chapterId ?? id,
+          counts: 9999,
+          pages: 1,
+          userType: true,
+        );
         final list = _asList(_asMap(res)['data'] ?? res);
         return list.map((e) => ReadPage(path: e.toString())).toList();
       case ContentKind.comicAv:
-        final res = await _api.comicRead(chapterId: chapterId ?? id);
+        final res = await _api.comicRead(
+          chapterId: chapterId ?? id,
+          counts: 9999,
+          pages: 1,
+          userType: true,
+        );
         final list = _asMapList(_asMap(res)['data'] ?? res);
         return list.map(ReadPage.fromJson).toList();
       case ContentKind.photo:
-        final res = await _api.photoRead(id: id);
+        final res = await _api.photoRead(id: id, counts: 9999, pages: 1);
         final list = _asMapList(_asMap(res)['data'] ?? res);
         return list.map(ReadPage.fromJson).toList();
       default:

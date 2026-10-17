@@ -167,22 +167,46 @@ class ContentItem {
     );
   }
 
+  /// 解析封面引用，并**自动识别 key/iv 编码**：
+  ///
+  /// - 列表接口的漫画(ns)封面 key/iv 为 **hex**（值等于固定 NS_COMIC_KEY/IV）→ 用固定方案；
+  /// - 收藏等接口可能改回 **Base64** 逐图 key/iv（漫画 av / 图集 / 部分 ns）→ 切到
+  ///   [ImageScheme.perImage]。若不做区分，收藏里第一个漫画会解密失败 → 不显示图片。
   static ResourceRef? _coverOf(Map<String, dynamic> j, ImageScheme scheme) {
     final c = j['cover'];
+    final Map<String, dynamic> src;
     if (c is Map) {
-      return ResourceRef.fromJson(c.cast<String, dynamic>(), scheme: scheme);
+      src = c.cast<String, dynamic>();
+    } else if (j['cover_path'] != null) {
+      // 有些接口把封面平铺。
+      src = j;
+    } else {
+      return null;
     }
-    // 有些接口把封面平铺。
-    final p = j['cover_path'];
-    if (p != null) {
-      return ResourceRef(
-        path: p.toString(),
-        scheme: scheme,
-        key: j['key']?.toString(),
-        iv: j['iv']?.toString(),
-      );
+    var s = scheme;
+    final k = src['key']?.toString();
+    // 漫画(ns) 默认固定密钥；若接口改回 Base64 逐图密钥则切到 perImage。
+    if (s == ImageScheme.nsComic && k != null && _looksBase64(k)) {
+      s = ImageScheme.perImage;
     }
-    return null;
+    return ResourceRef(
+      path: (src['cover_path'] ?? src['path'] ?? src['image_path'] ?? '').toString(),
+      scheme: s,
+      key: k,
+      iv: src['iv']?.toString(),
+    );
+  }
+
+  /// 判断密钥是否为 Base64（长度 ≥16 且为 4 的倍数、仅含 Base64 字符）。
+  /// 32/64 位纯十六进制视为 hex 固定密钥，不算 Base64（仍走固定方案）。
+  static bool _looksBase64(String k) {
+    if (k.length < 16 || k.length % 4 != 0) return false;
+    if (!RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(k)) return false;
+    if ((k.length == 32 || k.length == 64) &&
+        RegExp(r'^[0-9A-Fa-f]+$').hasMatch(k)) {
+      return false;
+    }
+    return true;
   }
 }
 

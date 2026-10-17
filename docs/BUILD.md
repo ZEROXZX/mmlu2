@@ -341,6 +341,23 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 > 仍属**服务端**问题、客户端无法修（已做容错/降级）：`v3/photo/similar` 常 502、
 > `api1.mmlu.services` 密集请求时约 50% `Connection reset`、`v2/user/info` 偶发 502。
 
+### 6g. 未登录(游客)报 499 / 动漫只能看预告片 / 小说列表空白图且阅读 403 / 收藏第一种漫画无图【实测定位】
+
+对照可用参考实现 `/storage/emulated/0/mmlu第三方/` 逐条定位：
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 未登录直接报 `ApiException(499): 缺少Token參數` | 启动只拉 host.txt，**从未注册游客 token**，`AuthInterceptor` 无 token 可附 | 启动即 `v2/register` 拿游客 token（`ApiClient.ensureGuestToken`，`main.dart` 引导链调用）；请求遇 `499/495` 自动重注册重试 |
+| 注册了 token 内容仍空（`{error:{msg:unidentify}}`） | 游客注册后**必须再调 `v2/combine/startup`** 激活会话，否则内容接口回 unidentify（HTTP 200） | `ensureGuestToken` 注册成功后随即 startup；`_send` 见 `unidentify` 也自动重注册重试 |
+| 搜索/收藏点开的动漫播放 `Source error`、只有「预告片」 | 搜索结果的动漫 `source='av'`，客户端据此走 `v2/combine/animat/internal` → media 为 `/v1/animat/media/...`，该路径已**失效（返回 HTML）** | 动漫详情**统一走 `v3/nsanimat/internal/{id}`**（对任意 id 均返回可播放的 `/v3/nsanimat/media/...`），忽略 source |
+| 播放本地代理 `ExoPlaybackException: Source error` | `127.0.0.1` 本地 HLS 代理是明文 HTTP，Android 9+ 默认禁明文（media3/ExoPlayer 走系统策略） | 加 `res/xml/network_security_config.xml` 放行 `127.0.0.1`/`localhost` 明文，manifest 引用 |
+| 小说列表全是空白图 | 小说条目**无 `cover` 字段**，网格仍渲染 `CoverImage` → 破图 | `ContentTile`/`HorizontalContentRow` 对 fiction 用**纯文字卡片**；`CoverImage` 无图时用中性占位而非破图 |
+| 阅读小说容器 403 / `Connection reset`（host=ac1） | 小说正文在 **fiction 域**，客户端 `urlFor` 对非动漫一律取 comic(ac1) → 403 | `ResourceService.urlFor` 对 `ContentKind.fiction` 取 `apiFiction`(`fiction1.mmlutech.xyz`) |
+| 下载动漫/小说分片 403（`shturl.cc/...` 签名 URL） | 同上：AV 路径的签名分片；NS 分片为 `na.mmlu1.site` **无签名**可直下 | 动漫改走 NS 后分片不再走签名；小说走 fiction 域 |
+| 收藏里「两个漫画」第一个(ns)不显示封面 | 收藏接口的 ns 封面 key/iv 可能为 **Base64 逐图**（列表接口是 64 位 hex 固定） | `_coverOf` 检测 key：Base64 → 切 `perImage`；hex → 保持固定方案 |
+
+> 已实测确认（无需再猜）：`v3/nsanimat/internal/{任意 id}` 均返回 `/v3/nsanimat/media/{intro,720,240}` 三档；NS m3u8 分片 `na.mmlu1.site/apen/<key>/ts/*.ts` 直下 200、key.php 16 字节、AES-128-CBC 解密后为 MPEG-TS（sync=0x47）；`fiction1.mmlutech.xyz/zhcn/*.txt` 明文 200。
+
 ---
 
 ## 7. 常见错误速查（均为沙箱实测）
@@ -355,6 +372,11 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 收藏/历史 502、漫画 av 榜单为空 | 旧 `v2/comic/*` 路径失效 | §6f：改 `v3/comic/ns|data/*` |
 | 图集「查看全部图片」500 | 详情 item 丢 id（=0）→ `photoRead(0)` | §6f：建 item 时补回 id |
 | 下载分片 `No host specified in URI` | m3u8 的 KEY URI 无 scheme | §6f：`parseM3u8` 补 `https://` |
+| 未登录报 `499 缺少Token參數` / 内容空 `unidentify` | 无游客 token / 注册后未 startup | §6g：启动注册游客 token + startup；499/unidentify 自动重试 |
+| 动漫点开只播放「预告片」/ `Source error` | `source=av` 走了失效的 `/v1/animat/media` | §6g：动漫详情统一 `v3/nsanimat/internal/{id}` |
+| 播放 `ExoPlaybackException: Source error` | 本地代理 127.0.0.1 明文被系统拦截 | §6g：network_security_config 放行 localhost |
+| 小说列表空白图 / 阅读 403 | 小说无封面仍渲染图；正文取错域(ac1) | §6g：fiction 纯文字卡 + 正文走 fiction 域 |
+| 收藏第一个漫画无封面 | ns 封面 key/iv 为 Base64 逐图 | §6g：`_coverOf` 自动切 perImage |
 | `java.net.ConnectException ... services.gradle.org`（Gradle wrapper 卡住） | 官方分发包域名不通/重定向到不通的 CDN | §3 腾讯镜像 distributionUrl（本包已配） |
 | 下载中 `Connection reset`（大文件中途断） | 网络对大文件不稳 | 用 `wget -c`/`curl -C -` 断点续传下载到本地，distributionUrl 改 `file:/本机路径/gradle-9.3.1-bin.zip`（实测 137MB 成功） |
 | `Could not resolve ... maven.google.com` / `google()` 超时 | Google Maven 不通 | §3 sed 替换（工程内 2 处本包已改；**Flutter SDK 内 2 处需自己改**） |

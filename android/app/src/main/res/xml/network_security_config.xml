@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置：只对本地 HLS 代理（http://127.0.0.1:<随机端口>）放行明文 HTTP。
+  播放器（media3/ExoPlayer）走 Java 网络栈，受 Android 明文策略约束；若不放行，
+  连接本地明文流会抛 ExoPlaybackException: Source error。
+  其余域名保持默认（禁止明文），上游均为 HTTPS。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

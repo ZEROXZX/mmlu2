@@ -24,9 +24,14 @@ class ResourceService {
   final Dio _dio;
 
   /// 拼接资源绝对 URL（[path] 可能无前导 `/`）。
+  ///
+  /// - 动漫图：img 域；
+  /// - 小说正文：fiction 域（`ac1` 会 403，见 §9D）；
+  /// - 漫画/图集：comic 域。
   String urlFor(ContentKind kind, String path) {
     final base = switch (kind) {
       ContentKind.animat => _domains.urlOf(DomainType.apiImg),
+      ContentKind.fiction => _domains.urlOf(DomainType.apiFiction),
       _ => _domains.urlOf(DomainType.apiComic),
     };
     final root = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
