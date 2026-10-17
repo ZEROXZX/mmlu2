@@ -110,8 +110,11 @@ class _BodyState extends State<_Body> {
     final title = _title(item);
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      // 描述用 Expanded 撑满封面高度；Row 在 ListView 里高度无界，
+      // 必须用 IntrinsicHeight 收束，否则 RenderFlex 报“unbounded height”。
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 小说条目无封面，直接不显示图片区。
           if (widget.kind != ContentKind.fiction) ...[
@@ -155,6 +158,7 @@ class _BodyState extends State<_Body> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -218,11 +222,13 @@ class _BodyState extends State<_Body> {
 
   List<Widget> _actions(ContentDetail d) {
     final buttons = <Widget>[
-      OutlinedButton.icon(
-        onPressed: _favBusy ? null : () => _toggleFav(d.item),
-        icon: Icon(_fav ? Icons.favorite : Icons.favorite_border),
-        label: Text(_fav ? '已收藏' : '收藏'),
-      ),
+      // 图集无收藏接口（v2/photo/favorite 404），不显示收藏按钮。
+      if (widget.kind != ContentKind.photo)
+        OutlinedButton.icon(
+          onPressed: _favBusy ? null : () => _toggleFav(d.item),
+          icon: Icon(_fav ? Icons.favorite : Icons.favorite_border),
+          label: Text(_fav ? '已收藏' : '收藏'),
+        ),
     ];
 
     if (widget.kind == ContentKind.animat) {
@@ -464,6 +470,8 @@ class _BodyState extends State<_Body> {
 
   /// 拉取收藏状态，使按钮初始态与实际一致（避免“点了没反应”）。
   Future<void> _refreshFav() async {
+    // 图集无收藏接口，不请求。
+    if (widget.kind == ContentKind.photo) return;
     try {
       final repo = context.read<AppContainer>().contentRepo;
       final src = widget.source ?? widget.detail.item.source;

@@ -142,14 +142,18 @@ class StreamService {
   }
 
   /// 下载并解密单个分片。
+  ///
+  /// [key] 为 null 表示明文流（m3u8 无 `#EXT-X-KEY`），原样返回密文/明文，
+  /// 与 [downloadSegments] 的处理保持一致，避免代理路径直接崩。
   Future<Uint8List> fetchSegment(
     String url,
-    Uint8List key,
+    Uint8List? key,
     Uint8List? iv, {
     int tries = 12,
     CancelToken? cancelToken,
   }) async {
     final ct = await _getBytes(url, tries: tries, cancelToken: cancelToken);
+    if (key == null || key.isEmpty) return ct;
     return decryptSegment(ct, key, iv);
   }
 
@@ -182,11 +186,6 @@ class StreamService {
   }) async {
     if (info.segments.isEmpty) throw StateError('m3u8 无分片');
     Directory(partDir).createSync(recursive: true);
-    // 无 `#EXT-X-KEY` 的明文流：key 为 null，分片原样落盘（不再直接 ! 崩）。
-    final keyUri = info.keyUri;
-    final key = (keyUri == null || keyUri.isEmpty)
-        ? null
-        : await fetchKey(keyUri, cancelToken: cancelToken);
 
     final total = info.segments.length;
     final pending = <int>[];
@@ -203,6 +202,13 @@ class StreamService {
     }
     onProgress?.call(done, total, bytes);
     if (pending.isEmpty) return (bytes: bytes, total: total, complete: true);
+
+    // 全部就位时不再白拉一次 key。无 `#EXT-X-KEY` 的明文流：key 为 null，
+    // 分片原样落盘（不再直接 ! 崩）。
+    final keyUri = info.keyUri;
+    final key = (keyUri == null || keyUri.isEmpty)
+        ? null
+        : await fetchKey(keyUri, cancelToken: cancelToken);
 
     Future<void> worker() async {
       while (pending.isNotEmpty) {

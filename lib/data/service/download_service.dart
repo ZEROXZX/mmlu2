@@ -1,35 +1,29 @@
 import 'dart:io';
 
+import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter/return_code.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'native_bridge.dart';
 
-/// FFmpeg 转码封装。
-///
-/// 默认调用系统/内置 `ffmpeg` 可执行文件（Android 可随包附带 ffmpeg 二进制，
-/// 或替换为 ffmpeg_kit 插件）。可用 [ffmpegPath] 指定路径。
+/// FFmpeg 转码封装（使用 ffmpeg_kit_flutter）。
 class Mp4Converter {
-  Mp4Converter({this.ffmpegPath = 'ffmpeg'});
+  const Mp4Converter();
 
-  final String ffmpegPath;
-
-  /// 将 TS 合并为 MP4。`-c copy` 直接封装（无需重编码）。
+  /// 将 TS 合并为 MP4。`-c copy` 直接封装（无需重编码）；失败则回退重编码。
   Future<bool> tsToMp4(String tsPath, String mp4Path) async {
     try {
-      final r = await Process.run(ffmpegPath, [
-        '-y',
-        '-i', tsPath,
-        '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        mp4Path,
-      ]);
-      if (r.exitCode == 0 && File(mp4Path).existsSync()) return true;
-      // 退化：重编码
-      final r2 = await Process.run(ffmpegPath, [
-        '-y', '-i', tsPath, mp4Path,
-      ]);
-      return r2.exitCode == 0 && File(mp4Path).existsSync();
+      final r = await FFmpegKit.execute(
+          '-y -i "$tsPath" -c copy -bsf:a aac_adtstoasc "$mp4Path"');
+      final rc = await r.getReturnCode();
+      if (rc != null && ReturnCode.isSuccess(rc)) {
+        if (File(mp4Path).existsSync()) return true;
+      }
+      final r2 = await FFmpegKit.execute('-y -i "$tsPath" "$mp4Path"');
+      final rc2 = await r2.getReturnCode();
+      return (rc2 != null && ReturnCode.isSuccess(rc2)) &&
+          File(mp4Path).existsSync();
     } catch (_) {
       return false;
     }
@@ -42,7 +36,7 @@ class Mp4Converter {
 /// 这里只提供无状态的原子能力。
 class DownloadService {
   DownloadService({Mp4Converter? converter, Future<Directory> Function()? rootOverride})
-      : converter = converter ?? Mp4Converter(),
+      : converter = converter ?? const Mp4Converter(),
         _rootOverride = rootOverride;
 
   final Mp4Converter converter;

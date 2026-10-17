@@ -19,6 +19,7 @@ dependencies:
   archive: ^3.6.1
   video_player: ^2.14.1
 
+  ffmpeg_kit_flutter: ^6.0.3
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -26,3 +27,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+

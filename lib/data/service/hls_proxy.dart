@@ -114,7 +114,7 @@ class HlsProxy {
       return;
     }
     final text = await _streams.fetchM3u8(mediaPath);
-    _infoCache[mediaPath] = StreamService.parseM3u8(text); // 预热，供 /seg 复用
+    _cacheInfo(mediaPath, StreamService.parseM3u8(text)); // 预热，供 /seg 复用
     final body = rewritePlaylist(text, (i) {
       final e = encodeMediaPath(mediaPath);
       return 'http://127.0.0.1:$port/seg?i=$i&m=$e';
@@ -134,7 +134,9 @@ class HlsProxy {
       req.response.statusCode = HttpStatus.notFound;
       return;
     }
-    final key = await _keyFor(info.keyUri);
+    // 明文流（无 `#EXT-X-KEY`）key 为 null，直接回分片原文，别让 _keyFor 抛错。
+    final keyUri = info.keyUri;
+    final key = (keyUri == null || keyUri.isEmpty) ? null : await _keyFor(keyUri);
     final plain = await _streams.fetchSegment(info.segments[idx], key, info.iv);
     req.response.statusCode = HttpStatus.ok;
     req.response.headers.contentType = ContentType('video', 'mp2t');
@@ -147,16 +149,17 @@ class HlsProxy {
     final hit = _infoCache[mediaPath];
     if (hit != null) return hit;
     final info = StreamService.parseM3u8(await _streams.fetchM3u8(mediaPath));
-    // 长期播放累积会拖住内存：超上限整体清空（命中率略降，可重取，无副作用）。
-    if (_infoCache.length > 256) _infoCache.clear();
-    _infoCache[mediaPath] = info;
+    _cacheInfo(mediaPath, info);
     return info;
   }
 
-  Future<Uint8List> _keyFor(String? keyUri) async {
-    if (keyUri == null || keyUri.isEmpty) {
-      throw StateError('m3u8 缺少 EXT-X-KEY');
-    }
+  /// 写入 info 缓存并控规模，避免长期播放把内存拖满（[prewarm] 与惰性解析共用）。
+  void _cacheInfo(String mediaPath, M3u8Info info) {
+    if (_infoCache.length > 256) _infoCache.clear();
+    _infoCache[mediaPath] = info;
+  }
+
+  Future<Uint8List> _keyFor(String keyUri) async {
     final hit = _keyCache[keyUri];
     if (hit != null) return hit;
     final key = await _streams.fetchKey(keyUri);

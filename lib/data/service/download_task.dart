@@ -196,7 +196,7 @@ class DownloadManager extends ChangeNotifier {
     final root = await service.rootDir();
     final dir = await service.subDir(kind.label);
     final zipPath = p.join(dir.path, '${_safeName(title, id)}.zip');
-    final tmp = Directory(p.join(root.path, '.imgs_$id'))..createSync(recursive: true);
+    final tmp = Directory(p.join(root.path, '.imgs_pack_$id'))..createSync(recursive: true);
     try {
       final paths = await _fetchImagesToDir(
         kind: kind,
@@ -774,12 +774,14 @@ class DownloadManager extends ChangeNotifier {
       buf.writeln(text);
     }
     await File(outPath).writeAsString(buf.toString());
+    // 用实际落盘字节数（UTF-8），别拿 StringBuffer.length（UTF-16 字符数）当大小。
+    final outBytes = await File(outPath).length();
 
     t
       ..status = DownloadStatus.done
       ..outputPath = outPath
       ..decryptedUrl = outPath
-      ..bytes = buf.length
+      ..bytes = outBytes
       ..label = '完成'
       ..speed = 0;
     await _upsertRecord(
@@ -788,7 +790,7 @@ class DownloadManager extends ChangeNotifier {
       filePath: outPath,
       encryptedUrl: t.encryptedUrl,
       decryptedUrl: outPath,
-      totalBytes: buf.length,
+      totalBytes: outBytes,
     );
     _notifyDone(t);
     notifyListeners();

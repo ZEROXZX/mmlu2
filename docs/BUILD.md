@@ -465,6 +465,22 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 
 > 契约：`download_task_test.dart`（`scope` 生成不同 id）、`content_repo_animat_test.dart`（`isFavorite` 翻页 / source 精确匹配 / 不无限翻页）。
 
+### 6o. 二次走查整改（详情页布局 / 代理明文流）【fix15】
+
+fix14 后再次全库走查发现的遗留问题：
+
+| 现象 / 隐患 | 根因 | 修复 |
+|---|---|---|
+| 详情页**整页红屏**（debug）/ 描述文字不显示（release） | `_header` 是 `Row > Expanded > Column > Expanded(desc)`，而该 Row 在 `ListView`（竖向无界）里 → `RenderFlex children have non-zero flex but incoming height constraints are unbounded`（抛错在 `assert` 内，release 下断言被剥，表现为描述被压成 0 高） | `detail_page.dart`：`_header` 的 `Row` 外套 `IntrinsicHeight`（高度收束到封面 148/150 高，描述按剩余高度裁切） |
+| 播放**无 `#EXT-X-KEY` 的明文流**时代理返回 500、播不了 | `HlsProxy._serveSegment` 无条件 `_keyFor(info.keyUri)`，`keyUri` 为空时 `_keyFor` 抛 `StateError` | ① `StreamService.fetchSegment` 的 `key` 改为**可空**（null/空 → 原样返回分片，与下载路径一致）；② `_serveSegment` 仅在 `keyUri` 非空时取 key |
+| 长期播放时 HLS `_infoCache` 只增不减（绕过上限） | `_servePlaylist` 预热时直接写 `_infoCache`，未过 `_infoFor` 的 >256 清空 | 抽 `_cacheInfo()`（带 >256 清空），预热与惰性解析共用 |
+| 小说下载后大小显示为「字符数」而非字节（中文偏小） | `t.bytes = buf.length`（`StringBuffer.length` 是 UTF-16 码元数） | 落盘后取 `File(outPath).length()`（真实 UTF-8 字节）作 `bytes`/`totalBytes` |
+| `packImages`（打包接口）与图片下载任务的临时目录同名 `.imgs_<id>` | 两者都用 `.imgs_$id` | `packImages` 临时目录改 `.imgs_pack_<id>`，避免同 id 并发冲突 |
+| 分片已全部就位时仍白拉一次 key.php | `downloadSegments` 先取 key 再算 pending | 先算 pending，全就位直接返回，仅在确有缺片时才取 key |
+| 图集详情页显示「收藏」按钮，点了必失败 | 图集无收藏接口（`v2/photo/favorite` 404），仍渲染按钮并请求 | `_actions` 对 photo **不渲染收藏按钮**，`_refreshFav` 对 photo 直接 return（不再发无效请求） |
+
+> 契约：`stream_segment_test.dart`（`fetchSegment`：key 为 null/空 → 原样返回；有 key → AES-128-CBC 解密）。
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
