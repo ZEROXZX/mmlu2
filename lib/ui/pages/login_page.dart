@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
-import 'home_shell.dart';
 
 /// 官方账号登录页（内容接口需登录，游客 token 会 495 unidentify）。
 ///
-/// 仅保留登录能力；忘记密码/改密/绑手机等「账号管理」按需求跳过。
+/// 由「账号」页进入；登录成功后 `pop(true)`，由调用方刷新。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -21,6 +20,13 @@ class _LoginPageState extends State<LoginPage> {
   bool _busy = false;
   String? _err;
 
+  @override
+  void dispose() {
+    _phone.dispose();
+    _pwd.dispose();
+    super.dispose();
+  }
+
   Future<void> _login() async {
     final c = context.read<AppContainer>();
     setState(() {
@@ -34,11 +40,9 @@ class _LoginPageState extends State<LoginPage> {
         countryCodes: _cc,
       );
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeShell()),
-      );
+      Navigator.of(context).pop(true);
     } catch (e) {
-      setState(() => _err = '$e');
+      if (mounted) setState(() => _err = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

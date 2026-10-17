@@ -57,6 +57,7 @@ class MemberRepo {
       password: password,
     ));
     if (res.token != null) await _tokenStore.save(res.token!);
+    await _tokenStore.markLoggedIn(true);
     return res;
   }
 

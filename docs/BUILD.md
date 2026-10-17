@@ -290,6 +290,34 @@ Flutter 模板只在 `android/app/src/debug/AndroidManifest.xml` 与
 
 （本包已加好。）
 
+### 6d. 登录报 `type 'int' is not a subtype of type 'String?' in type cast`
+
+服务端登录返回的 `TokenResponse`（以及 `UserInfoResponse`）里，`UUID` / `userId` /
+`phone` / `country_codes` 等字段**类型不稳定**：账号 ID 类字段可能是 JSON 数字
+（int），而代码用 `j['userId'] as String?` 强转 → 抛
+`type 'int' is not a subtype of type 'String?' in type cast`。
+
+修复：一律用宽松转换取值（本包已改）——
+`lib/data/models/token_response.dart`、`lib/data/models/user_info_response.dart`：
+
+```dart
+String? _str(Object? v) => v == null ? null : (v is String ? v : v.toString());
+int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? int.tryParse(v) : null));
+```
+
+### 6e. 打开 APP 就强制登录、无法跳过
+
+原实现 `home: tokenStore.isLoggedIn ? HomeShell() : LoginPage()`，且
+`isLoggedIn` 仅判断「有无 token」（游客 device token 也算），导致每次冷启动都进登录页。
+
+改为：**打开即进主界面（`home: const HomeShell()`），登录变为可选**——
+入口在右上角「账号」页（未登录显示「登录官方账号」按钮）；
+`TokenStore.isLoggedIn` 改用独立标记 `mmlu_logged_in`（游客 token 不算登录），
+登录成功 `markLoggedIn(true)`、登出时清除。
+
+> 注意：内容接口需官方账号（游客 token 访问内容返回 **495 unidentify**）。
+> 未登录可进 App 框架，但列表/播放等内容区可能为空或提示 495。
+
 ---
 
 ## 7. 常见错误速查（均为沙箱实测）
@@ -298,6 +326,8 @@ Flutter 模板只在 `android/app/src/debug/AndroidManifest.xml` 与
 |---|---|---|
 | **release 包卡在启动图**（中央 APP 图像 + 黑背景），debug 正常 | AGP 9 默认开 R8，Flutter keep 规则不生效 | §6b：显式 `isMinifyEnabled=false; isShrinkResources=false` |
 | **release 能启动但所有网络失败** | main manifest 缺 INTERNET 权限 | §6c：加 `<uses-permission ... INTERNET/>` |
+| 登录报 `type 'int' is not a subtype of type 'String?' in type cast` | 服务端 `userId`/`UUID` 等返回 int，代码 `as String?` 强转 | §6d：宽松转换 `_str()` |
+| 打开即登录页、无法跳过 | `isLoggedIn` 误判 + `home` 强制登录 | §6e：`home: HomeShell()` + 独立登录标记 |
 | `java.net.ConnectException ... services.gradle.org`（Gradle wrapper 卡住） | 官方分发包域名不通/重定向到不通的 CDN | §3 腾讯镜像 distributionUrl（本包已配） |
 | 下载中 `Connection reset`（大文件中途断） | 网络对大文件不稳 | 用 `wget -c`/`curl -C -` 断点续传下载到本地，distributionUrl 改 `file:/本机路径/gradle-9.3.1-bin.zip`（实测 137MB 成功） |
 | `Could not resolve ... maven.google.com` / `google()` 超时 | Google Maven 不通 | §3 sed 替换（工程内 2 处本包已改；**Flutter SDK 内 2 处需自己改**） |
@@ -313,7 +343,8 @@ Flutter 模板只在 `android/app/src/debug/AndroidManifest.xml` 与
 
 `flutter install -d <设备>` 或 `adb install -r app-release.apk`：
 
-1. 首次启动 → 登录页（登录官方账号；沙箱实测 token 在其他设备登录会被 496 顶下线）
+1. 首次启动 → 直接进主界面（不强制登录）；登录入口在右上角「账号」页
+   （内容接口需官方账号，未登录访问内容会返回 495）
 2. 首页 banner / 各分类列表
 3. 详情页：分集合集（前篇+后篇并列）、**相似作品**（samelike）、系列可点
 4. **播放**：直流播放（本地代理流播，起播即播）；顶栏「合集」可切集

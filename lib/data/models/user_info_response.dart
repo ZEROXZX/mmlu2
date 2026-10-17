@@ -1,5 +1,8 @@
 /// 用户信息 (UserInfoResponse)。
 /// 字段来源：dex UserInfoResponse + MemberBean。
+///
+/// ⚠ 服务端字段类型不稳定（如 `phone` 可能是 int），一律用 [_str] 宽松取字符串，
+/// 数值字段用 [_intv]，避免运行时 `type cast` 崩溃。
 class UserInfoResponse {
   UserInfoResponse({
     this.id,
@@ -22,18 +25,15 @@ class UserInfoResponse {
   final int? lock;
 
   factory UserInfoResponse.fromJson(Map<String, dynamic> j) => UserInfoResponse(
-        id: _asInt(j['id']),
-        phone: j['phone'] as String?,
-        countryCodes: j['country_codes'] as String?,
-        level: _asInt(j['level']),
-        levelExpiryAt: _asInt(j['level_expiry_at']),
-        lock: _asInt(j['lock']),
+        id: _intv(j['id']),
+        phone: _str(j['phone']),
+        countryCodes: _str(j['country_codes']),
+        level: _intv(j['level']),
+        levelExpiryAt: _intv(j['level_expiry_at']),
+        lock: _intv(j['lock']),
       );
 
   bool get isVip => (level ?? 0) > 1;
-
-  static int? _asInt(Object? v) =>
-      v is int ? v : (v is num ? v.toInt() : (v is String ? int.tryParse(v) : null));
 }
 
 /// 会员 bean (MemberBean)。
@@ -55,13 +55,23 @@ class MemberBean {
   final int? lockStamp;
 
   factory MemberBean.fromJson(Map<String, dynamic> j) => MemberBean(
-        id: j['_id'] as String? ?? j['id'] as String?,
-        countryCode: j['countryCode'] as String?,
-        mobile: j['mobile'] as String?,
-        level: j['level'] as int?,
-        levelExpiryAt: j['levelExpiryAt'] as int?,
-        lockStamp: j['lockStamp'] as int?,
+        id: _str(j['_id'] ?? j['id']),
+        countryCode: _str(j['countryCode']),
+        mobile: _str(j['mobile']),
+        level: _intv(j['level']),
+        levelExpiryAt: _intv(j['levelExpiryAt']),
+        lockStamp: _intv(j['lockStamp']),
       );
 
   bool get isVip => (level ?? 0) > 1;
 }
+
+String? _str(Object? v) {
+  if (v == null) return null;
+  if (v is String) return v;
+  return v.toString();
+}
+
+int? _intv(Object? v) => v is int
+    ? v
+    : (v is num ? v.toInt() : (v is String ? int.tryParse(v) : null));

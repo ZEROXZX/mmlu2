@@ -7,7 +7,7 @@ import '../widgets/async_view.dart';
 import 'history_page.dart';
 import 'login_page.dart';
 
-/// 账号页：官方账号信息 + 登出。
+/// 账号页：已登录显示官方账号信息 + 登出；未登录显示登录入口（不强制）。
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
 
@@ -17,6 +17,13 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   bool _busy = false;
+
+  Future<void> _openLogin() async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+    if (ok == true && mounted) setState(() {});
+  }
 
   Future<void> _logout() async {
     final c = context.read<AppContainer>();
@@ -35,11 +42,7 @@ class _AccountPageState extends State<AccountPage> {
     setState(() => _busy = true);
     try {
       await c.memberRepo.officialLogout();
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-        (route) => false,
-      );
+      if (mounted) setState(() {});
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -50,7 +53,45 @@ class _AccountPageState extends State<AccountPage> {
     final c = context.read<AppContainer>();
     return Scaffold(
       appBar: AppBar(title: const Text('账号')),
-      body: AsyncView<UserInfoResponse>(
+      body: c.tokenStore.isLoggedIn ? _loggedIn(c) : _guest(),
+    );
+  }
+
+  Widget _guest() => ListView(
+        children: [
+          const SizedBox(height: 40),
+          const Icon(Icons.account_circle_outlined, size: 80, color: Colors.grey),
+          const SizedBox(height: 12),
+          const Center(
+            child: Text('未登录官方账号', style: TextStyle(fontSize: 16)),
+          ),
+          const SizedBox(height: 6),
+          const Center(
+            child: Text('登录后可浏览与播放内容', style: TextStyle(color: Colors.grey)),
+          ),
+          const SizedBox(height: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: FilledButton.icon(
+              onPressed: _openLogin,
+              icon: const Icon(Icons.login),
+              label: const Text('登录官方账号'),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.history),
+            title: const Text('观看历史'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HistoryPage()),
+            ),
+          ),
+        ],
+      );
+
+  Widget _loggedIn(AppContainer c) => AsyncView<UserInfoResponse>(
         future: c.memberRepo.userInfo(),
         onRetry: () => setState(() {}),
         builder: (context, info) => ListView(
@@ -90,7 +131,5 @@ class _AccountPageState extends State<AccountPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
+      );
 }

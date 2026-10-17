@@ -7,7 +7,6 @@ import 'app/app_container.dart';
 import 'data/service/download_task.dart';
 import 'data/service/native_bridge.dart';
 import 'ui/pages/home_shell.dart';
-import 'ui/pages/login_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +28,6 @@ class MmluApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final loggedIn = container.tokenStore.isLoggedIn;
     return Provider<AppContainer>.value(
       value: container,
       child: ChangeNotifierProvider<DownloadManager>.value(
@@ -39,7 +37,8 @@ class MmluApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme:
               ThemeData(colorSchemeSeed: const Color(0xFF7B61FF), useMaterial3: true),
-          home: loggedIn ? const HomeShell() : const LoginPage(),
+          // 打开即进主界面，不强制登录；登录入口在「账号」页。
+          home: const HomeShell(),
         ),
       ),
     );
