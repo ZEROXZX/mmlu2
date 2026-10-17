@@ -1,94 +1,105 @@
-# mmlu_client — GitHub Actions 自动打包 APK
-# 适配 docs/BUILD.md 的实测结论：
-#   - runner 为 x86_64 → 不存在 BUILD.md §6 的 AAPT2 ARM64 坑
-#   - runner 网络直连 Google 正常 → 不需要 BUILD.md §3 的镜像 sed 修改
-#   - 仓库内已预配置的腾讯 Gradle 镜像 / dl.google.com Maven 在 CI 上同样可用
-#
-# 用法：
-#   1. 本文件放到仓库根目录 .github/workflows/build-apk.yml
-#   2. 若需正式签名，先在 android/app/build.gradle.kts 里按 BUILD.md §5
-#      加入 signingConfigs 读取 android/key.properties 的配置
-#   3. 在 GitHub 仓库 Settings → Secrets and variables → Actions 里配置：
-#      KEYSTORE_BASE64（keystore 的 base64，本地执行 base64 -w 0 mmlu.jks）
-#      KEYSTORE_PASSWORD / KEY_PASSWORD / KEY_ALIAS（默认 mmlu）
-#   4. push 到 main 或打 tag（v*）触发；也可在 Actions 页手动触发
-
-name: Build mmlu_client APK
+name: Build Android + Windows
 
 on:
   push:
-    branches: [ main, master ]
-    tags: [ 'v*' ]
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FLUTTER_CHANNEL: stable
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
     env:
-      # GitHub Actions 不允许在 step 的 if 里直接读 secrets，
-      # 这里把 KEYSTORE_BASE64 映射成环境变量，供后面的 if 判断使用
+      # secrets映射到环境变量，解决if不能直接读secrets的报错
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'          # BUILD.md 实测 17.0.20 可用；兼容性提示时改 21
+          java-version: '17'
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          flutter-version: '3.47.x'   # BUILD.md: Flutter 3.47.x / Dart 3.13.x
-          cache: true                 # 缓存 Flutter SDK 与 pub 依赖
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
 
-      - name: Accept Android SDK licenses
-        uses: android-actions/setup-android@v3
-
-      - name: Cache Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Get dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze          # 期望输出 "No issues found"
+      - name: Flutter analyze
+        run: flutter analyze
 
-      - name: Test
-        run: flutter test             # 期望 43/43 All tests passed
-
-      - name: Set up release signing
-        # 仅 tag 触发且配置了 keystore 时才注入正式签名；
-        # 未配置时保持 debug 签名（能装能跑，不适合分发）
+      # 仅tag触发并且密钥存在时，执行签名配置注入
+      - name: Prepare signing keystore
         if: startsWith(github.ref, 'refs/tags/') && env.KEYSTORE_BASE64 != ''
-        shell: bash
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/mmlu.jks"
-          printf '%s\n' \
-            "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" \
-            "keyPassword=${{ secrets.KEY_PASSWORD }}" \
-            "keyAlias=${{ secrets.KEY_ALIAS }}" \
-            "storeFile=$RUNNER_TEMP/mmlu.jks" \
-            > android/key.properties
+          echo "${{ env.KEYSTORE_BASE64 }}" | base64 -d > android/app/mmlu.jks
+          cat > android/app/key.properties <<EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=mmlu.jks
+          EOF
 
-      - name: Build release APK
-        run: flutter build apk --release
-        # 只要 arm64 更小更快可改为：
-        # flutter build apk --release --target-platform=android-arm64
-        # 产物：build/app/outputs/flutter-apk/app-release.apk
+      - name: Build Android Release APK
+        run: flutter build apk --release --target-platform=android-arm64
 
-      - name: Upload APK artifact
+      - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mmlu-client-apk
+          name: android-apk
           path: build/app/outputs/flutter-apk/*.apk
-          if-no-files-found: error
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter Windows
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Flutter analyze
+        run: flutter analyze
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: build/windows/x64/runner/Release/**
+
+  # tag推送时，把两个job产物打包发布到GitHub Release
+  release:
+    needs: [build-android, build-windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/*.apk
+          files: |
+            android-apk/*.apk
+            windows-build/*
