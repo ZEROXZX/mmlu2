@@ -490,11 +490,21 @@ GET    (StreamApi @Url)   @Streaming, Header:Authorization, Url(String), host(St
 > **第三方客户端首选 v3**：分片无签名、免鉴权、可直下（`key.php` 与 `*.ts` 均公开可取）。
 > v3 与 v2 的 `media` 值（avkey）可能不同；`directory[]` 同理带 `media`。
 
-> ⭐ **详情统一用 v3**：搜索/收藏结果里的动漫 `source='av'`，但如果客户端据此改走
-> `v2/combine/animat`，media 就是**已失效的 `/v1/animat/media/...`（该 URL 现返回 HTML）**，
-> 表现为「播放 Source error / 只有预告片」。实测 `v3/nsanimat/internal/{id}` 对**任意 id**
-> （含 AV id 如 7559、7683）都返回可播放的 `/v3/nsanimat/media/...` 三档。故详情一律 v3，
-> 忽略 source。
+> ⭐ **详情必须按 `source` 路由（关键！）**：AV 与 NS 是**两套 id 空间**，
+> `v2/combine/animat/internal/{id}` 与 `v3/nsanimat/internal/{id}` 对同一个 id 返回**不同作品**。
+> 实测（2026-10-17）搜索「鬼父」：结果项 `source='av'`、`id=14767`；
+> - `v2/combine/animat/internal/14767` → **正确**「鬼父 Rebuild…」，media `/v1/animat/media/...`；
+> - `v3/nsanimat/internal/14767` → **别的作品**「【MMD】飞霄…」（200，静默串台）；
+> - 大量 AV id（1..25 等）`v3/nsanimat/internal` → **HTTP 410 `资源无法存取`**。
+>
+> 故：`source='av'` 用 **v2/combine/animat**（媒体 `/v1/animat/media`，**署名 CloudFront 分片**），
+> `source='ns'`/缺省用 **v3/nsanimat**（媒体 `/v3/nsanimat/media`，无签名分片）；410/404 时互相回退。
+> 早前「一律走 v3」是**错误**的，会导致「搜索展示与点开内容不符」与「点开 410 network error」。
+>
+> AV 链路实测可播：`/v1/animat/media/720/GHOSTFATHER-0008.m3u8` 解密后为标准 HLS，
+> 分片为 `na.mmlu1.site/apen/<avkey>/ts/<avkey>-N.ts?...Signature=...&Key-Pair-Id=...`（**有签名**，
+> 但**随 m3u8 实时下发**、`key.php` 16B、AES-128-CBC 解密后 len%188==0）。故每次播放/下载
+> 都要**重新拉一次 m3u8** 以取新签名。
 
 ### 9B.3 拉取并解密 m3u8
 

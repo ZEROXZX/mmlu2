@@ -68,6 +68,7 @@ class _BodyState extends State<_Body> {
     return ListView(
       children: [
         _header(d.item),
+        _metaSection(d.item),
         const Divider(height: 1),
         ..._actions(d),
         const Divider(height: 1),
@@ -125,6 +126,63 @@ class _BodyState extends State<_Body> {
         ],
       ),
     );
+  }
+
+  /// 作品详细（元信息）：系列 / 季 / 集 / 时长 / 播放量 / 发行 / 制作 / 来源 / 编号。
+  Widget _metaSection(ContentItem item) {
+    final raw = item.raw ?? const <String, dynamic>{};
+    String s(Object? v) => (v ?? '').toString().trim();
+    final rows = <MapEntry<String, String>>[
+      if (s(item.series).isNotEmpty) MapEntry('系列', s(item.series)),
+      if ((item.season ?? 0) > 0) MapEntry('季', '第 ${item.season} 季'),
+      if (item.ep != null) MapEntry('集数', '第 ${item.ep} 集'),
+      if (s(item.duration).isNotEmpty) MapEntry('时长', s(item.duration)),
+      if ((item.viewCount ?? 0) > 0) MapEntry('播放量', _humanCount(item.viewCount!)),
+      if (s(raw['publisher']).isNotEmpty) MapEntry('发行', s(raw['publisher'])),
+      if (s(raw['studio']).isNotEmpty) MapEntry('制作', s(raw['studio'])),
+      if (s(item.source).isNotEmpty)
+        MapEntry('来源', s(item.source) == 'av' ? 'AV' : (s(item.source) == 'ns' ? 'NS' : s(item.source))),
+      if (s(item.avkey).isNotEmpty) MapEntry('编号', s(item.avkey)),
+      if (s(raw['opened_at']).isNotEmpty) MapEntry('发布时间', s(raw['opened_at'])),
+      if (item.tags.isNotEmpty) MapEntry('标签', item.tags.join(' / ')),
+    ];
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text('作品信息', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          for (final r in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 64,
+                    child: Text('${r.key}：',
+                        style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  ),
+                  Expanded(
+                    child: Text(r.value,
+                        style: const TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _humanCount(int n) {
+    if (n >= 100000000) return '${(n / 100000000).toStringAsFixed(1)} 亿';
+    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)} 万';
+    return '$n';
   }
 
   List<Widget> _actions(ContentDetail d) {

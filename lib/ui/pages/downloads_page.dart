@@ -192,25 +192,46 @@ class _DownloadsPageState extends State<DownloadsPage> {
           visualDensity: VisualDensity.compact,
         );
 
+    // 复制下载链接（加密 / 密钥 / 解密后）——各状态均可查看。
+    final links = btn(Icons.link, '复制下载链接', () {
+      final r = context.read<AppContainer>().downloadStore
+          .load()
+          .where((e) => e.id == t.id)
+          .toList();
+      _showLinks(
+        context,
+        title: t.title,
+        encrypted: t.encryptedUrl ?? (r.isNotEmpty ? r.first.encryptedUrl : null),
+        key: t.keyUrl ?? (r.isNotEmpty ? r.first.keyUrl : null),
+        decrypted: t.decryptedUrl ?? (r.isNotEmpty ? r.first.decryptedUrl : null),
+      );
+    });
+
     switch (t.status) {
       case DownloadStatus.queued:
       case DownloadStatus.downloading:
         return [
+          links,
           if (t.canPause)
             btn(Icons.pause_circle_outline, '暂停', () => mgr.pause(t)),
           btn(Icons.close, '取消', () => mgr.cancel(t), color: Colors.redAccent),
         ];
       case DownloadStatus.paused:
         return [
+          links,
           if (t.canResume)
             btn(Icons.play_circle_outline, '恢复', () => mgr.resume(t)),
           btn(Icons.close, '取消', () => mgr.cancel(t), color: Colors.redAccent),
         ];
       case DownloadStatus.done:
-        return [btn(Icons.delete_outline, '删除', () => mgr.remove(t))];
+        return [
+          links,
+          btn(Icons.delete_outline, '删除', () => mgr.remove(t)),
+        ];
       case DownloadStatus.failed:
       case DownloadStatus.cancelled:
         return [
+          links,
           if (t.canRetry)
             btn(Icons.refresh, '重试', () => mgr.retry(t)),
           btn(Icons.delete_outline, '删除', () => mgr.remove(t)),
@@ -281,7 +302,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
         icon: const Icon(Icons.delete_outline),
         onPressed: () => _deleteOne(context, r),
       ),
-      onTap: () => _showLinks(context, r),
+      onTap: () => _showLinks(
+        context,
+        title: r.title,
+        encrypted: r.encryptedUrl,
+        key: r.keyUrl,
+        decrypted: r.decryptedUrl,
+      ),
     );
   }
 
@@ -335,25 +362,54 @@ class _DownloadsPageState extends State<DownloadsPage> {
     if (ok == true) await mgr.clearFinished();
   }
 
-  // ---- 三条链接（R1.4） ------------------------------------------------------
+  // ---- 三条链接（加密 / 解密密钥 / 解密后） ---------------------------------
 
-  void _showLinks(BuildContext context, DownloadRecord r) {
+  void _showLinks(
+    BuildContext context, {
+    required String title,
+    String? encrypted,
+    String? key,
+    String? decrypted,
+  }) {
+    final hasAny = [encrypted, key, decrypted]
+        .any((v) => v != null && v.isNotEmpty);
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(r.title),
+        title: Text(title),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _link(context, '加密链接', r.encryptedUrl),
-              _link(context, '密钥链接', r.keyUrl),
-              _link(context, '解密后', r.decryptedUrl),
+              if (!hasAny)
+                const Text('暂无可用链接（开始下载后可获取）',
+                    style: TextStyle(fontSize: 13, color: Colors.grey))
+              else ...[
+                _link(context, '加密链接', encrypted),
+                _link(context, '解密密钥链接', key),
+                _link(context, '解密后链接', decrypted),
+              ],
             ],
           ),
         ),
         actions: [
+          if (hasAny)
+            TextButton(
+              onPressed: () {
+                final all = <String>[
+                  if (encrypted != null && encrypted.isNotEmpty)
+                    '加密链接: $encrypted',
+                  if (key != null && key.isNotEmpty) '解密密钥链接: $key',
+                  if (decrypted != null && decrypted.isNotEmpty)
+                    '解密后链接: $decrypted',
+                ].join('\n');
+                Clipboard.setData(ClipboardData(text: all));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('已复制全部链接')));
+              },
+              child: const Text('复制全部'),
+            ),
           TextButton(
               onPressed: () => Navigator.pop(context), child: const Text('关闭')),
         ],

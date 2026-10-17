@@ -77,6 +77,16 @@ class DownloadTask {
   String? error;
   String? outputPath;
 
+  // ---- 下载链接（可在「下载」页复制/分享） ----
+  /// 加密链接：视频=m3u8 地址；图片=首个加密图；小说=首个正文地址。
+  String? encryptedUrl;
+
+  /// 解密密钥链接：视频=key.php（AES-128 密钥）；图片/小说通常无独立密钥链接。
+  String? keyUrl;
+
+  /// 解密后链接：成品本地文件路径（视频 mp4/ts、图片 zip、小说 txt）。
+  String? decryptedUrl;
+
   // ---- 控制位（仅 DownloadManager 写） ----
   bool pauseRequested = false;
   bool cancelRequested = false;
@@ -286,8 +296,9 @@ class DownloadManager extends ChangeNotifier {
     await _deleteDir(await _partDirOf(t.id));
     try {
       final dir = await service.subDir(t.kind.label);
+      final base = _safeName(t.title, t.id);
       for (final ext in const ['ts', 'mp4', 'zip', 'txt']) {
-        await service.deleteLocal(p.join(dir.path, '${t.id}.$ext'));
+        await service.deleteLocal(p.join(dir.path, '$base.$ext'));
       }
     } catch (_) {}
     // 图片任务若曾导出相册，一并清理 Pictures/mmlu/<标题>。
@@ -375,14 +386,16 @@ class DownloadManager extends ChangeNotifier {
     final dir = await service.subDir(t.kind.label);
     final partDir = p.join((await service.rootDir()).path, '.parts_${t.id}');
     final m3u8Url = streams.buildM3u8Url(mediaPath);
+    t.encryptedUrl = m3u8Url;
     await _upsertRecord(
       t,
       status: 'downloading',
-      filePath: p.join(dir.path, '${t.id}.ts'),
+      filePath: p.join(dir.path, '${_safeName(t.title, t.id)}.ts'),
       encryptedUrl: m3u8Url,
     );
 
     final info = StreamService.parseM3u8(await streams.fetchM3u8(mediaPath));
+    t.keyUrl = info.keyUri;
     t.total = info.segments.length;
     notifyListeners();
 
@@ -427,14 +440,14 @@ class DownloadManager extends ChangeNotifier {
     t.label = '合并分片…';
     t.speed = 0;
     notifyListeners();
-    final tsPath = p.join(dir.path, '${t.id}.ts');
+    final tsPath = p.join(dir.path, '${_safeName(t.title, t.id)}.ts');
     await _concatParts(partDir, tsPath);
 
     var outPath = tsPath;
     if (t.toMp4) {
       t.label = '转 MP4…';
       notifyListeners();
-      final mp4Path = p.join(dir.path, '${t.id}.mp4');
+      final mp4Path = p.join(dir.path, '${_safeName(t.title, t.id)}.mp4');
       if (await service.converter.tsToMp4(tsPath, mp4Path)) {
         outPath = mp4Path;
         try {
@@ -447,6 +460,7 @@ class DownloadManager extends ChangeNotifier {
     t
       ..status = DownloadStatus.done
       ..outputPath = outPath
+      ..decryptedUrl = outPath
       ..bytes = res.bytes
       ..label = '完成'
       ..speed = 0;
@@ -473,14 +487,18 @@ class DownloadManager extends ChangeNotifier {
     final pages = t.pages ?? const <ReadPage>[];
     if (pages.isEmpty) throw StateError('无图片');
     final dir = await service.subDir(t.kind.label);
-    final zipPath = p.join(dir.path, '${t.id}.zip');
+    final zipPath = p.join(dir.path, '${_safeName(t.title, t.id)}.zip');
+    final firstUrl = pages.isEmpty
+        ? null
+        : resources.urlFor(t.kind, pages.first.path);
+    t.encryptedUrl = firstUrl;
+    t.keyUrl = pages.isEmpty ? null : pages.first.key;
     await _upsertRecord(
       t,
       status: 'downloading',
       filePath: zipPath,
-      encryptedUrl: pages.isEmpty
-          ? null
-          : resources.urlFor(t.kind, pages.first.path),
+      encryptedUrl: firstUrl,
+      keyUrl: t.keyUrl,
     );
 
     final results = List<Uint8List?>.filled(pages.length, null);
@@ -533,6 +551,7 @@ class DownloadManager extends ChangeNotifier {
     t
       ..status = DownloadStatus.done
       ..outputPath = zipPath
+      ..decryptedUrl = zipPath
       ..bytes = bytes
       ..label = '完成'
       ..speed = 0;
@@ -540,11 +559,14 @@ class DownloadManager extends ChangeNotifier {
       t,
       status: 'done',
       filePath: zipPath,
+      encryptedUrl: firstUrl,
+      keyUrl: t.keyUrl,
       decryptedUrl: zipPath,
       totalBytes: bytes,
     );
-    // 可选：另存一份进相册 Pictures/mmlu/<标题>/NNNN.jpg（默认关闭，见 exportToGallery）。
-    if (exportToGallery) await _saveImagesToGallery(t, results);
+    if (exportToGallery) {
+      unawaited(_saveImagesToGallery(t, results));
+    }
     _notifyDone(t);
     notifyListeners();
   }
@@ -566,11 +588,14 @@ class DownloadManager extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// 文件名安全的标题（相册子目录名）。
-  static String _safeName(String s) {
+  /// 文件名安全的标题（相册子目录名 / 下载文件名）。
+  ///
+  /// 下载产物一律以**作品名**命名（小说/动漫/漫画/图集），非法字符替换为 `_`，
+  /// 超长截断；标题为空时回退 [fallback]（一般传任务 id）。
+  static String _safeName(String s, [String fallback = 'mmlu']) {
     final cleaned = s.replaceAll(RegExp(r'[\\/:*?"<>|\n\r\t]'), '_').trim();
     final limited = cleaned.length > 60 ? cleaned.substring(0, 60) : cleaned;
-    return limited.isEmpty ? 'mmlu' : limited;
+    return limited.isEmpty ? fallback : limited;
   }
 
   /// 下载完成通知。
@@ -588,14 +613,16 @@ class DownloadManager extends ChangeNotifier {
     final chapters = t.chapters ?? const <ResourceRef>[];
     if (chapters.isEmpty) throw StateError('无章节');
     final dir = await service.subDir(t.kind.label);
-    final outPath = p.join(dir.path, '${t.id}.txt');
+    final outPath = p.join(dir.path, '${_safeName(t.title, t.id)}.txt');
+    final firstUrl = chapters.isEmpty
+        ? null
+        : resources.urlFor(t.kind, chapters.first.path);
+    t.encryptedUrl = firstUrl;
     await _upsertRecord(
       t,
       status: 'downloading',
       filePath: outPath,
-      encryptedUrl: chapters.isEmpty
-          ? null
-          : resources.urlFor(t.kind, chapters.first.path),
+      encryptedUrl: firstUrl,
     );
 
     final texts = List<String?>.filled(chapters.length, null);
@@ -638,6 +665,7 @@ class DownloadManager extends ChangeNotifier {
     t
       ..status = DownloadStatus.done
       ..outputPath = outPath
+      ..decryptedUrl = outPath
       ..bytes = buf.length
       ..label = '完成'
       ..speed = 0;
@@ -645,6 +673,7 @@ class DownloadManager extends ChangeNotifier {
       t,
       status: 'done',
       filePath: outPath,
+      encryptedUrl: t.encryptedUrl,
       decryptedUrl: outPath,
       totalBytes: buf.length,
     );

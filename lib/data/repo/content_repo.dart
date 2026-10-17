@@ -1,3 +1,4 @@
+import '../../core/network/api_exception.dart';
 import '../api/api_service.dart';
 import '../models/banner.dart';
 import '../models/content.dart';
@@ -74,9 +75,10 @@ class ContentRepo {
   /// 内容详情。
   ///
   /// - 动漫：`episodes` 为 `directory[]`（含分集 media）；`item` 为 `summary[0]`。
-  ///   详情**统一走 `v3/nsanimat/internal/{id}`**（含搜索/收藏里的 `source=av` 项，
-  ///   该接口对任意 id 均返回可播放的 `/v3/nsanimat/media/...`）。`source=av` 的
-  ///   `v2/combine/animat` 接口返回的 `/v1/animat/media/...` 已失效（返回 HTML）。
+  ///   **按 [source] 路由**：`av` → `v2/combine/animat/internal`（媒体 `/v1/animat/media`，
+  ///   签名分片）；`ns`/未知 → `v3/nsanimat/internal`（媒体 `/v3/nsanimat/media`）。
+  ///   二者 id 空间不同：把 AV 项丢给 nsanimat 会拿到**别的作品**或 `410 资源无法存取`，
+  ///   反之亦然。路由错误时会回退到另一条。
   /// - 漫画：`chapters` 为 `directory[]`（含 `chapter_id`）。
   /// - 小说：`fictionChapters` 为 `data[]`（含 `filepath`）。
   /// - 图集：`item` 取自返回体；页表用 [readPages]。
@@ -84,8 +86,7 @@ class ContentRepo {
     final res = await switch (kind) {
       ContentKind.comicNs => _api.comicNsDetail(id),
       ContentKind.comicAv => _api.comicAvDetail(id),
-      // source='av'（搜索/收藏结果）同样用 nsanimat，避免 /v1/animat 失效路径。
-      ContentKind.animat => _api.nsAnimatDetail(id),
+      ContentKind.animat => _animatDetail(id, source),
       ContentKind.fiction => _api.fictionSummary(id),
       ContentKind.photo => _api.photoRead(id: id),
     };
@@ -172,6 +173,24 @@ class ContentRepo {
   }
 
   /// 小说章节正文（明文）。返回每章的 ResourceRef（scheme=plain）。
+  /// 动漫详情按 source 路由，并在 410/404 时回退到另一条线路。
+  ///
+  /// AV 与 NS 是两套 id 空间：AV 项用 nsanimat 会取到别的作品（200）或
+  /// `410 资源无法存取`；NS 项用 combine/animat 同理。故以 [source] 为准，
+  /// 兜底再回退一次。
+  Future<Object?> _animatDetail(int id, String? source) async {
+    Future<Object?> fetch(String? s) =>
+        s == 'av' ? _api.animatDetail(id) : _api.nsAnimatDetail(id);
+    try {
+      return await fetch(source);
+    } catch (e) {
+      if (e is ApiException && (e.statusCode == 410 || e.statusCode == 404)) {
+        return fetch(source == 'av' ? 'ns' : 'av');
+      }
+      rethrow;
+    }
+  }
+
   Future<List<ResourceRef>> fictionChapters(int id) async {
     final res = await _api.fictionSummary(id);
     final list = _asMapList(_asMap(res)['data'] ?? res);

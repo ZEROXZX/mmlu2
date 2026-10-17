@@ -349,14 +349,35 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 |---|---|---|
 | 未登录直接报 `ApiException(499): 缺少Token參數` | 启动只拉 host.txt，**从未注册游客 token**，`AuthInterceptor` 无 token 可附 | 启动即 `v2/register` 拿游客 token（`ApiClient.ensureGuestToken`，`main.dart` 引导链调用）；请求遇 `499/495` 自动重注册重试 |
 | 注册了 token 内容仍空（`{error:{msg:unidentify}}`） | 游客注册后**必须再调 `v2/combine/startup`** 激活会话，否则内容接口回 unidentify（HTTP 200） | `ensureGuestToken` 注册成功后随即 startup；`_send` 见 `unidentify` 也自动重注册重试 |
-| 搜索/收藏点开的动漫播放 `Source error`、只有「预告片」 | 搜索结果的动漫 `source='av'`，客户端据此走 `v2/combine/animat/internal` → media 为 `/v1/animat/media/...`，该路径已**失效（返回 HTML）** | 动漫详情**统一走 `v3/nsanimat/internal/{id}`**（对任意 id 均返回可播放的 `/v3/nsanimat/media/...`），忽略 source |
+| 搜索展示与点开**内容不符** / 点开 AV 项报 `ApiException(410): 资源无法存取` | AV 与 NS 是**两套 id 空间**：`source='av'` 的 id（如 14767）交给 `v3/nsanimat/internal` 会拿到**别的作品**或 **410** | 详情**按 source 路由**：`av`→`v2/combine/animat/internal`；`ns`/缺省 → `v3/nsanimat/internal`；410/404 互回退（`ContentRepo._animatDetail`） |
+| AV 动漫播放 `Source error`（旧结论已纠正） | 早前误判 `/v1/animat/media` 已失效；实测**仍可用**：`/v1/animat/media/720/xxx.m3u8` 解密后为标准 HLS，分片为 `na.mmlu1.site/apen/<key>/ts/*.ts` **带实时签名**（`Signature=`/`Key-Pair-Id=`） | 详情按 source 走 v2 后 media 即该路径；**每次播放/下载重新拉 m3u8** 取新签名即可正常播放 |
 | 播放本地代理 `ExoPlaybackException: Source error` | `127.0.0.1` 本地 HLS 代理是明文 HTTP，Android 9+ 默认禁明文（media3/ExoPlayer 走系统策略） | 加 `res/xml/network_security_config.xml` 放行 `127.0.0.1`/`localhost` 明文，manifest 引用 |
 | 小说列表全是空白图 | 小说条目**无 `cover` 字段**，网格仍渲染 `CoverImage` → 破图 | `ContentTile`/`HorizontalContentRow` 对 fiction 用**纯文字卡片**；`CoverImage` 无图时用中性占位而非破图 |
 | 阅读小说容器 403 / `Connection reset`（host=ac1） | 小说正文在 **fiction 域**，客户端 `urlFor` 对非动漫一律取 comic(ac1) → 403 | `ResourceService.urlFor` 对 `ContentKind.fiction` 取 `apiFiction`(`fiction1.mmlutech.xyz`) |
-| 下载动漫/小说分片 403（`shturl.cc/...` 签名 URL） | 同上：AV 路径的签名分片；NS 分片为 `na.mmlu1.site` **无签名**可直下 | 动漫改走 NS 后分片不再走签名；小说走 fiction 域 |
+| 下载动漫/小说分片 403（签名 URL） | AV 分片是**署名 CloudFront URL**（`na.mmlu1.site/apen/...?Signature=...`），签名**随 m3u8 实时下发**，用旧签名/缓存 m3u8 会 403 | 下载前**重新拉一次 m3u8** 取新签名；小说走 fiction 域（`ResourceService.urlFor`） |
 | 收藏里「两个漫画」第一个(ns)不显示封面 | 收藏接口的 ns 封面 key/iv 可能为 **Base64 逐图**（列表接口是 64 位 hex 固定） | `_coverOf` 检测 key：Base64 → 切 `perImage`；hex → 保持固定方案 |
 
-> 已实测确认（无需再猜）：`v3/nsanimat/internal/{任意 id}` 均返回 `/v3/nsanimat/media/{intro,720,240}` 三档；NS m3u8 分片 `na.mmlu1.site/apen/<key>/ts/*.ts` 直下 200、key.php 16 字节、AES-128-CBC 解密后为 MPEG-TS（sync=0x47）；`fiction1.mmlutech.xyz/zhcn/*.txt` 明文 200。
+> **更正（2026-10-17，fix7）**：`v3/nsanimat/internal/{id}` 只对 **NS id** 返回正确作品；对 **AV id**（如 14767）会返回**别的作品**或 **HTTP 410 `资源无法存取`**。AV 详情须用 `v2/combine/animat/internal/{id}`，媒体 `/v1/animat/media/...`（署名 CloudFront 分片，随 m3u8 实时下发）。
+> 已实测确认：NS m3u8 分片 `na.mmlu1.site/apen/<key>/ts/*.ts` 直下 200、key.php 16 字节、AES-128-CBC 解密后为 MPEG-TS（len%188==0）；AV `GHOSTFATHER-0008` 同域同结构、有签名；`fiction1.mmlutech.xyz/zhcn/*.txt` 明文 200。
+
+### 6h. 搜索点开内容不符 / 点开报 `ApiException(410)` / 详情缺「作品信息」/ 下载复制链接【实测定位，fix7】
+
+搜索「鬼父」得到 `source='av'`、`id=14767`，但点开：
+- `v3/nsanimat/internal/14767` → **别的作品**「【MMD】飞霄…」（HTTP 200，**静默串台**）；大量 AV id（1..25）→ **HTTP 410 `资源无法存取`**；
+- `v2/combine/animat/internal/14767` → **正确**「鬼父 Rebuild…」，media `/v1/animat/media/...`。
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 搜索展示与点开内容不符 / 点开报 `ApiException(410): 网络错误` | AV/NS 是**两套 id 空间**，详情没按 `source` 路由（统一走 v3/nsanimat） | `ContentRepo.detail` → `_animatDetail(id, source)`：`av`→`animatDetail`(v2/combine)、其余→`nsAnimatDetail`(v3/nsanimat)；**410/404 互相回退** |
+| 详情页只有标题/图，缺描述信息 | 未展示 `summary` 里的系列/季/集数/时长/播放量等 | `detail_page` 新增「作品信息」区块（系列/季/集数/时长/播放量/发行/制作/来源/编号/发布时间/标签） |
+| 下载后想拿「加密/密钥/解密后」链接 | 任务未保存三条 URL | `DownloadTask` 加 `encryptedUrl`/`keyUrl`/`decryptedUrl`，下载中就记录；下载页任务行与历史行均可「复制下载链接」（通用对话框，支持复制全部） |
+| 图集/漫画「导出到相册」开关无效 | `_saveImagesToGallery` 定义后未调用（死代码） | `_runImages` 完成后按 `exportToGallery` 调用 |
+| 下载产物文件名是一串 id（`12345.zip`），认不出内容 | 输出文件用 `${t.id}.<ext>` 命名 | 统一改用**作品名**：`<标题>.mp4/.zip/.txt`（`_safeName` 过滤 `\/:*?"<>|`、截断 60 字、空标题回退 id），`Download/mmlu/<分类>/` 下 |
+
+> AV 链路可播（实测）：`/v1/animat/media/720/GHOSTFATHER-0008.m3u8` 解密后是标准 HLS；
+> `key.php` 16 字节、分片 AES-128-CBC 解密后 `len%188==0`。分片带 `Signature`/`Key-Pair-Id`
+> 但**随 m3u8 每次实时下发**，故播放/下载前必须重新拉 m3u8（客户端已如此）。
+> `source` 缺省时按 NS 处理；参考实现 src4 `server.py:694` 对 anime 详情也恒走 v3，**同样会错，勿盲抄**。
 
 ---
 
@@ -373,7 +394,7 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 图集「查看全部图片」500 | 详情 item 丢 id（=0）→ `photoRead(0)` | §6f：建 item 时补回 id |
 | 下载分片 `No host specified in URI` | m3u8 的 KEY URI 无 scheme | §6f：`parseM3u8` 补 `https://` |
 | 未登录报 `499 缺少Token參數` / 内容空 `unidentify` | 无游客 token / 注册后未 startup | §6g：启动注册游客 token + startup；499/unidentify 自动重试 |
-| 动漫点开只播放「预告片」/ `Source error` | `source=av` 走了失效的 `/v1/animat/media` | §6g：动漫详情统一 `v3/nsanimat/internal/{id}` |
+| 搜索展示与点开动漫内容不符 / 点开 `ApiException(410) 资源无法存取` | AV/NS 两套 id 空间，详情未按 `source` 路由 | §6h：详情**按 source 路由**（av→`v2/combine/animat`，ns→`v3/nsanimat`），410/404 互相回退 |
 | 播放 `ExoPlaybackException: Source error` | 本地代理 127.0.0.1 明文被系统拦截 | §6g：network_security_config 放行 localhost |
 | 小说列表空白图 / 阅读 403 | 小说无封面仍渲染图；正文取错域(ac1) | §6g：fiction 纯文字卡 + 正文走 fiction 域 |
 | 收藏第一个漫画无封面 | ns 封面 key/iv 为 Base64 逐图 | §6g：`_coverOf` 自动切 perImage |
