@@ -478,6 +478,7 @@ fix14 后再次全库走查发现的遗留问题：
 | `packImages`（打包接口）与图片下载任务的临时目录同名 `.imgs_<id>` | 两者都用 `.imgs_$id` | `packImages` 临时目录改 `.imgs_pack_<id>`，避免同 id 并发冲突 |
 | 分片已全部就位时仍白拉一次 key.php | `downloadSegments` 先取 key 再算 pending | 先算 pending，全就位直接返回，仅在确有缺片时才取 key |
 | 图集详情页显示「收藏」按钮，点了必失败 | 图集无收藏接口（`v2/photo/favorite` 404），仍渲染按钮并请求 | `_actions` 对 photo **不渲染收藏按钮**，`_refreshFav` 对 photo 直接 return（不再发无效请求） |
+| 动漫下载成品默认是 `.ts`（沙箱无 ffmpeg 时降级） | 转码用 `Process.run('ffmpeg')`，包内未附带 ffmpeg 二进制 | 改用 `ffmpeg_kit_flutter` 无损 remux（`-c copy`），失败回退重编码。仍要求真机有可用 ffmpegKit 运行时（aarch64 对应 native lib） |
 
 > 契约：`stream_segment_test.dart`（`fetchSegment`：key 为 null/空 → 原样返回；有 key → AES-128-CBC 解密）。
 
