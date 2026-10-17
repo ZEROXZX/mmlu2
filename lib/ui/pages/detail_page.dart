@@ -466,11 +466,9 @@ class _BodyState extends State<_Body> {
   Future<void> _refreshFav() async {
     try {
       final repo = context.read<AppContainer>().contentRepo;
-      final items = await repo.favorites(widget.kind, counts: 50);
       final src = widget.source ?? widget.detail.item.source;
-      final has = items.any((it) =>
-          it.id == widget.id &&
-          (widget.kind != ContentKind.animat || (it.source ?? '') == (src ?? '')));
+      // 分页精确判定，避免「第 21 条以后的收藏」被误判为未收藏。
+      final has = await repo.isFavorite(widget.kind, widget.id, source: src);
       if (mounted && has != _fav) setState(() => _fav = has);
     } catch (_) {}
   }
@@ -628,6 +626,8 @@ class _BodyState extends State<_Body> {
         final res = await showDialog<List<int>>(
           context: context,
           builder: (_) => _ChapterPickDialog(
+            title: '选择要下载的章节',
+            unit: '章',
             titles: [
               for (var i = 0; i < chapters.length; i++)
                 chapters[i].title.isEmpty ? '第 ${i + 1} 章' : chapters[i].title,
@@ -639,8 +639,13 @@ class _BodyState extends State<_Body> {
       }
     }
     if (!mounted) return;
+    // scope 区分「全本」与「单章 / 选集」，避免同名任务互相覆盖、文件名相撞。
+    final scope = only != null
+        ? '第${only + 1}章'
+        : (picked.length == chapters.length ? '' : '选${picked.length}章');
     context.read<DownloadManager>().addFiction(
           item: d.item,
+          scope: scope,
           chapters: [
             for (final i in picked)
               ResourceRef(path: chapters[i].path, scheme: ImageScheme.plain),
@@ -652,12 +657,33 @@ class _BodyState extends State<_Body> {
   Future<void> _downloadImagesZip(ContentDetail d) async {
     final container = context.read<AppContainer>();
     // 漫画需逐章取页；图集直接取页表。
-    final pages = <ReadPage>[];
     final scheme = widget.kind == ContentKind.comicNs ? ImageScheme.nsComic : ImageScheme.perImage;
+    var chapters = d.chapters;
+    var scope = '';
+    if (widget.kind != ContentKind.photo && chapters.length > 1) {
+      // 多章漫画：默认全选，可只挑部分章节打包（避免无差别下载整本）。
+      final res = await showDialog<List<int>>(
+        context: context,
+        builder: (_) => _ChapterPickDialog(
+          title: '选择要打包的章节',
+          unit: '章',
+          titles: [
+            for (var i = 0; i < chapters.length; i++)
+              chapters[i].title.isEmpty ? '第 ${i + 1} 章' : chapters[i].title,
+          ],
+        ),
+      );
+      if (res == null || res.isEmpty) return;
+      chapters = [for (final i in res) chapters[i]];
+      if (chapters.length != d.chapters.length) scope = '选${chapters.length}章';
+    }
+    if (!mounted) return;
+
+    final pages = <ReadPage>[];
     if (widget.kind == ContentKind.photo) {
       pages.addAll(await container.contentRepo.readPages(widget.kind, id: widget.id));
-    } else if (d.chapters.isNotEmpty) {
-      for (final ch in d.chapters) {
+    } else if (chapters.isNotEmpty) {
+      for (final ch in chapters) {
         pages.addAll(await container.contentRepo.readPages(widget.kind, id: widget.id, chapterId: ch.chapterId));
       }
     } else {
@@ -672,6 +698,7 @@ class _BodyState extends State<_Body> {
           item: d.item,
           pages: pages,
           scheme: scheme,
+          scope: scope,
         );
     _toast('已加入下载队列，可在「下载」页取消');
   }

@@ -113,6 +113,8 @@ class AppRepo {
           if (u != null && u.isNotEmpty) {
             await _client.domainStore.setStreamLine(
               fetchUrl: u,
+              // 注意：host.txt 里的 tsurl 常是 `stream-encrypt1.*`（对 key/分片会 403），
+              // 这里仍按原值落库，由 StreamService._streamHost 在拼接时归一化兜底。
               tsUrl: b.hostUrl ?? _client.domainStore.streamTsUrl,
               chain: (b.chain?.isNotEmpty ?? false)
                   ? b.chain!

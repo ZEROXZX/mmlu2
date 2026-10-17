@@ -147,6 +147,8 @@ class HlsProxy {
     final hit = _infoCache[mediaPath];
     if (hit != null) return hit;
     final info = StreamService.parseM3u8(await _streams.fetchM3u8(mediaPath));
+    // 长期播放累积会拖住内存：超上限整体清空（命中率略降，可重取，无副作用）。
+    if (_infoCache.length > 256) _infoCache.clear();
     _infoCache[mediaPath] = info;
     return info;
   }
@@ -158,6 +160,7 @@ class HlsProxy {
     final hit = _keyCache[keyUri];
     if (hit != null) return hit;
     final key = await _streams.fetchKey(keyUri);
+    if (_keyCache.length > 256) _keyCache.clear();
     _keyCache[keyUri] = key;
     return key;
   }

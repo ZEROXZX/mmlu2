@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../app/app_container.dart';
 import '../../data/models/content.dart';
 import '../widgets/async_view.dart';
-import '../widgets/content_tile.dart';
+import '../widgets/paginated_content.dart';
 import 'detail_page.dart';
 
 /// 搜索：选择内容种类 + 关键词。
@@ -18,7 +18,7 @@ class SearchTab extends StatefulWidget {
 class _SearchTabState extends State<SearchTab> {
   ContentKind _kind = ContentKind.animat;
   final _kw = TextEditingController();
-  Future<List<ContentItem>>? _future;
+  String? _query;
   List<String> _history = const [];
 
   @override
@@ -34,7 +34,7 @@ class _SearchTabState extends State<SearchTab> {
     c.searchHistoryStore.add(kw);
     setState(() {
       _history = c.searchHistoryStore.load();
-      _future = c.contentRepo.search(_kind, kw);
+      _query = kw;
     });
   }
 
@@ -131,20 +131,24 @@ class _SearchTabState extends State<SearchTab> {
             ],
           ),
         ),
-        if (_future == null && _history.isNotEmpty) _historyBar(),
+        if (_query == null && _history.isNotEmpty) _historyBar(),
         Expanded(
-          child: _future == null
+          child: _query == null
               ? const EmptyView(text: '输入关键词开始搜索')
-              : AsyncView<List<ContentItem>>(
-                  future: _future!,
-                  onRetry: _run,
-                  empty: const EmptyView(text: '无结果'),
-                  builder: (context, items) => ContentGrid(
-                    items: items,
-                    onTap: (it) => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => DetailPage(kind: it.kind, id: it.id, title: it.title, source: it.source),
-                    )),
-                  ),
+              : PaginatedContentList(
+                  // 关键词或种类变化时重建，重新从第 1 页开始。
+                  key: ValueKey('${_kind.tag}:$_query'),
+                  loader: (page) => context
+                      .read<AppContainer>()
+                      .contentRepo
+                      .search(_kind, _query!, pages: page),
+                  onTap: (it) => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => DetailPage(
+                        kind: it.kind,
+                        id: it.id,
+                        title: it.title,
+                        source: it.source),
+                  )),
                 ),
         ),
       ],

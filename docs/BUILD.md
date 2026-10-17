@@ -438,10 +438,32 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 |---|---|---|
 | 动漫点「收藏」有概率无效（列表里看不到、状态对不上） | 动漫 **AV / NS 是两套 id 空间**：`addFavorite` 恒写 `v2/animat/favorite`（AV），而首页/分类的动画列表走的是 `v3/nsanimat/*`（NS）；且收藏列表只读 AV → NS 收藏写错源、列表也查不到。加上写操作**忽略 200 错误信封**，失败也照样翻按钮 → “静默无效” | ① 收藏增删**按 `source` 路由**（`ns`→`v3/nsanimat/favorite`，否则 `v2/animat/favorite`）；② 动漫收藏列表**合并 AV+NS 并去重**；③ `ContentRepo._ensureOk` 检测 `{error}` 信封并抛 `ApiException`，UI 弹「操作失败」不再静默；④ 详情页进入时 `_refreshFav` 拉收藏状态，令按钮初始态与实际一致 |
 | 首页/分类点「更多」只显示一屏（约 20 条），下滑不再加载、来回都是那几条 | `ContentListPage` 一次性 `AsyncView` 拉一页，**无分页** | 重写为**滚动到底自动加载下一页**：`pages` 递增、按 `kind:id:source` 去重、本页不足或整页无新增即停止、首屏/追加失败分别给重试。首页与分类的「更多」均进入本页，故一并生效 |
+| 搜索结果同样只显示一屏、下滑不再加载 | 搜索页 `SearchTab` 用 `AsyncView` 拉一页，**无分页** | 抽出可复用组件 `lib/ui/widgets/paginated_content.dart`（`PaginatedContentList`），`ContentListPage` 与 `SearchTab` 共用；搜索结果也**滚动到底自动加载下一页**，并支持**下拉刷新**（清空后从第 1 页重载）。搜索页以 `ValueKey(kind:query)` 重建，换词/换种类即从头加载 |
 
 > 契约测试：`test/content_repo_animat_test.dart`（NS/AV 收藏路由、AV+NS 合并去重、error 信封抛 `ApiException`）。
 
 ---
+
+### 6n. 客户端全量走查整改【fix14】
+
+对 `lib/**` 全库走查后的 bug 修复（高危→低危）：
+
+| 现象 / 隐患 | 根因 | 修复 |
+|---|---|---|
+| 下载**无 `#EXT-X-KEY` 的明文流**时崩溃（`Null check operator used on a null value`） | `downloadSegments` 里 `info.keyUri!` 强解包；`HlsProxy` 有兜底、下载路径没有 | `stream_service.dart`：`keyUri` 为空则 `key=null`，分片原样落盘 |
+| 同一小说「单章下载」与「全本下载」互相覆盖（id 都是 `fiction_<id>`、文件名相同） | 任务 id / 产物名未区分下载作用域 | `DownloadTask` 新增 `suffix`；`addFiction`/`addImages` 新增 `scope`，非空时 id = `<kind>_<id>_<stableHash(scope)>`、文件名追加 `_<scope>` |
+| 漫画「打包下载」**无差别下载全部分章**，且整本图片驻留内存易 OOM | 遍历 `d.chapters` 全下；`Archive` 先全量解密再一次性压包 | ① 多章漫画弹**章节勾选**；② 解密图片**逐页落临时文件**，再用 `ZipFileEncoder` **流式压包**（内存只驻留单张），打完删临时目录 |
+| 下载合并中 `_getBytes` 每次 `new Dio()`（无连接复用） | 每次请求新建客户端 | 复用长驻 `_dio`（连接池） |
+| 「清除已完成」后残留 `.parts_<id>` 临时目录 | `clearFinished` 不删临时分片目录 | `clearFinished` 追加删除 `_partDirOf(id)`（成品文件仍保留） |
+| 小说下载弹窗文案显示「集」 | `_ChapterPickDialog` 默认 `unit:'集'` | 小说/漫画显式传 `unit:'章'` |
+| 服务端错误信封 `{error:{...}}`（Map 型）只显示「network error」 | `api_client._message` 仅认 `error` 为 String | 改用 `extractApiMessage`（兼容 String / 嵌套 Map / errors 数组） |
+| 详情页收藏态：第 21 条及以后的收藏被误判为「未收藏」 | `_refreshFav` 只取首页 | `ContentRepo.isFavorite`（分页遍历，**不只看首页**；动漫按 `source` 精确匹配） |
+| 从详情页取消收藏返回后，收藏列表不刷新 | 收藏页无刷新机制 | `FavoritesTab` 加下拉刷新 + 从详情返回后自动重载 |
+| 阅读页解密失败只看到破图、无法重试 | `_PageImage` 每次 build 新建 future（失败不重试） | `_PageImage` 改 Stateful（future 只建一次）+ 失败可点重试 |
+| 阅读/封面/HLS 缓存无上限增长 | 静态缓存只增不减 | 阅读(>200)/封面(>500)/HLS(>256) 缓存超限清空 |
+| 分页「重试」在 `setState` 内直接调异步 `_loadMore()` | setState 回调里触发异步副作用 | 先 `setState` 复位，再调 `_loadMore()` |
+
+> 契约：`download_task_test.dart`（`scope` 生成不同 id）、`content_repo_animat_test.dart`（`isFavorite` 翻页 / source 精确匹配 / 不无限翻页）。
 
 ## 7. 常见错误速查（均为沙箱实测）
 
@@ -467,6 +489,7 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | 打开软件可直接使用、未强制授权 | 权限仅首帧后台静默申请 | §6l：`PermissionGate` 启动强制授权，未授权无法进入 |
 | 动漫点收藏“有概率无效” | 收藏未按 AV/NS 区分（两套 id 空间）+ 错误被静默吞掉 | §6m：按 `source` 路由（ns→`v3/nsanimat`），收藏列表合并 AV+NS，error 信封抛错 |
 | 首页/分类「更多」下滑不再加载 | `ContentListPage` 无分页 | §6m：滚动到底自动加载下一页（去重 / 到底停止 / 失败重试） |
+| 搜索结果下滑不再加载 / 不能下拉刷新 | `SearchTab` 无分页、无刷新 | §6m：复用 `PaginatedContentList`，搜索也分页 + 下拉刷新 |
 | 删下载记录连带删了本地文件 | 记录与文件未解耦 | §6k：只删记录，保留成品文件（`remove`/历史删除均不再 `deleteLocal`） |
 | 没有搜索历史 | 关键词未持久化 | §6k：`SearchHistoryStore`（无上限 + 逐条删/清空） |
 | 图集详情页预览图空白（但能浏览） | `photoRead` 只给页表、无 cover | §6k：用**首张图**当预览封面 + 标题用列表页兜底 |

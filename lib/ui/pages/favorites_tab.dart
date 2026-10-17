@@ -34,6 +34,22 @@ class _FavoritesTabState extends State<FavoritesTab> {
   Future<List<ContentItem>> _load() =>
       context.read<AppContainer>().contentRepo.favorites(_kind);
 
+  Future<void> _reload() async {
+    final f = _load();
+    setState(() => _future = f);
+    try {
+      await f;
+    } catch (_) {}
+  }
+
+  Future<void> _open(ContentItem it) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DetailPage(kind: it.kind, id: it.id, title: it.title, source: it.source),
+    ));
+    // 详情页里可能取消了收藏，返回后刷新列表。
+    if (mounted) await _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -60,11 +76,12 @@ class _FavoritesTabState extends State<FavoritesTab> {
             future: _future,
             onRetry: () => setState(() => _future = _load()),
             empty: const EmptyView(text: '暂无收藏'),
-            builder: (context, items) => ContentGrid(
-              items: items,
-              onTap: (it) => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => DetailPage(kind: it.kind, id: it.id, title: it.title, source: it.source),
-              )),
+            builder: (context, items) => RefreshIndicator(
+              onRefresh: _reload,
+              child: ContentGrid(
+                items: items,
+                onTap: _open,
+              ),
             ),
           ),
         ),

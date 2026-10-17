@@ -36,6 +36,7 @@ class DownloadTask {
     this.pages,
     this.scheme,
     this.chapters,
+    this.suffix = '',
     this.toMp4 = true,
   });
 
@@ -56,6 +57,10 @@ class DownloadTask {
 
   /// fiction 专用：章表。
   final List<ResourceRef>? chapters;
+
+  /// fiction 专用：范围后缀（如 `第3章`/`选5章`）。空表示整本；
+  /// 用于区分「下载本章 / 选集」与「全本」的任务 id 与输出文件名，避免互相覆盖。
+  final String suffix;
 
   final bool toMp4;
 
@@ -178,8 +183,8 @@ class DownloadManager extends ChangeNotifier {
   /// 按需把「图集/漫画」全部页**下载→解密→打包**为本地 zip，返回 zip 文件路径。
   ///
   /// 与下载任务无关：不新建/登记任务、不发完成通知，仅产出
-  /// `Download/mmlu/<分类>/<标题>.zip`（供详情页「复制链接」按需打包复用）；
-  /// 任一分页失败即抛 [StateError]。
+  /// `Download/mmlu/<分类>/<标题>.zip`；任一分页失败即抛 [StateError]。
+  /// 解密后的图片先落临时目录再流式压包，**不在内存里堆积全部图片**。
   Future<String> packImages({
     required ContentKind kind,
     required String title,
@@ -188,36 +193,22 @@ class DownloadManager extends ChangeNotifier {
     ImageScheme scheme = ImageScheme.perImage,
   }) async {
     if (pages.isEmpty) throw StateError('无图片');
+    final root = await service.rootDir();
     final dir = await service.subDir(kind.label);
     final zipPath = p.join(dir.path, '${_safeName(title, id)}.zip');
-
-    final results = List<Uint8List?>.filled(pages.length, null);
-    final pending = <int>[for (var i = 0; i < pages.length; i++) i];
-
-    Future<void> worker() async {
-      while (pending.isNotEmpty) {
-        final i = pending.removeLast();
-        final pg = pages[i];
-        results[i] = await resources.fetchDecrypted(
-          kind,
-          ResourceRef(path: pg.path, scheme: scheme, key: pg.key, iv: pg.iv),
-        );
-      }
+    final tmp = Directory(p.join(root.path, '.imgs_$id'))..createSync(recursive: true);
+    try {
+      final paths = await _fetchImagesToDir(
+        kind: kind,
+        pages: pages,
+        scheme: scheme,
+        dir: tmp,
+      );
+      await _zipFiles(paths, _imageNames(pages.length), zipPath);
+      return zipPath;
+    } finally {
+      await _deleteDir(tmp.path);
     }
-
-    await Future.wait(
-        List.generate(concurrency.clamp(1, 8), (_) => worker()));
-
-    final archive = Archive();
-    for (var i = 0; i < results.length; i++) {
-      final b = results[i];
-      if (b == null) throw StateError('第 ${i + 1} 页下载失败');
-      archive.addFile(
-          ArchiveFile('${(i + 1).toString().padLeft(4, '0')}.jpg', b.length, b));
-    }
-    final zipBytes = ZipEncoder().encode(archive) ?? Uint8List(0);
-    await File(zipPath).writeAsBytes(zipBytes);
-    return zipPath;
   }
 
   /// 新增视频下载任务。
@@ -241,12 +232,18 @@ class DownloadManager extends ChangeNotifier {
   }
 
   /// 新增图片打包下载任务（漫画/图集；无暂停，仅取消）。
+  ///
+  /// [scope] 非空（漫画只选部分章节）时，任务 id 与 zip 文件名带上作用域，
+  /// 避免与「全本打包」互相覆盖。
   String addImages({
     required ContentItem item,
     required List<ReadPage> pages,
     ImageScheme scheme = ImageScheme.perImage,
+    String scope = '',
   }) {
-    final id = '${item.kind.tag}_${item.id}';
+    final id = scope.isEmpty
+        ? '${item.kind.tag}_${item.id}'
+        : '${item.kind.tag}_${item.id}_${_stableHash(scope)}';
     return _add(DownloadTask(
       id: id,
       title: item.title,
@@ -255,15 +252,23 @@ class DownloadManager extends ChangeNotifier {
       coverPath: item.cover?.path,
       pages: List<ReadPage>.unmodifiable(pages),
       scheme: scheme,
+      suffix: scope,
     ));
   }
 
   /// 新增小说下载任务（并行拉章、按序拼接；无暂停，仅取消）。
+  ///
+  /// [scope] 用于区分「全本」与「单章 / 选集」：非空时任务 id 与产物文件名都会带上
+  /// 作用域（含章节集合的稳定哈希），避免同一本书的不同下载互相覆盖/去重。
   String addFiction({
     required ContentItem item,
     required List<ResourceRef> chapters,
+    String scope = '',
   }) {
-    final id = 'fiction_${item.id}';
+    final paths = chapters.map((c) => c.path).join('\u0001');
+    final id = scope.isEmpty
+        ? 'fiction_${item.id}'
+        : 'fiction_${item.id}_${_stableHash('$scope|$paths')}';
     return _add(DownloadTask(
       id: id,
       title: item.title,
@@ -271,7 +276,18 @@ class DownloadManager extends ChangeNotifier {
       type: DownloadType.fiction,
       coverPath: item.cover?.path,
       chapters: List<ResourceRef>.unmodifiable(chapters),
+      suffix: scope,
     ));
+  }
+
+  /// 进程间稳定的短哈希（FNV-1a 32 位，十六进制）；仅用于任务/文件名去重。
+  static String _stableHash(String s) {
+    var h = 0x811c9dc5;
+    for (final c in s.codeUnits) {
+      h ^= c;
+      h = (h * 0x01000193) & 0xffffffff;
+    }
+    return h.toRadixString(16).padLeft(8, '0');
   }
 
   String _add(DownloadTask task) {
@@ -351,6 +367,10 @@ class DownloadManager extends ChangeNotifier {
     _tasks.removeWhere((t) => t.isTerminal);
     notifyListeners();
     await store.removeMany(gone.map((t) => t.id));
+    // 连带清理失败/中断任务的临时分片目录（成品文件仍保留）。
+    for (final t in gone) {
+      await _deleteDir(await _partDirOf(t.id));
+    }
   }
 
   void _launch(DownloadTask t) => unawaited(_safeRun(t));
@@ -520,8 +540,10 @@ class DownloadManager extends ChangeNotifier {
   Future<void> _runImages(DownloadTask t) async {
     final pages = t.pages ?? const <ReadPage>[];
     if (pages.isEmpty) throw StateError('无图片');
+    final root = await service.rootDir();
     final dir = await service.subDir(t.kind.label);
-    final zipPath = p.join(dir.path, '${_safeName(t.title, t.id)}.zip');
+    final zipPath = p.join(dir.path,
+        '${_safeName(t.title, t.id)}${t.suffix.isEmpty ? '' : '_${_safeName(t.suffix, '')}'}.zip');
     final firstUrl = pages.isEmpty
         ? null
         : resources.urlFor(t.kind, pages.first.path);
@@ -535,88 +557,145 @@ class DownloadManager extends ChangeNotifier {
       keyUrl: t.keyUrl,
     );
 
-    final results = List<Uint8List?>.filled(pages.length, null);
-    final pending = <int>[for (var i = 0; i < pages.length; i++) i];
-    var done = 0;
-    var bytes = 0;
-    t.total = pages.length;
-    notifyListeners();
+    final names = _imageNames(pages.length);
+    final tmp = Directory(p.join(root.path, '.imgs_${t.id}'))
+      ..createSync(recursive: true);
+    try {
+      final pending = <int>[for (var i = 0; i < pages.length; i++) i];
+      var done = 0;
+      var bytes = 0;
+      t.total = pages.length;
+      notifyListeners();
 
+      Future<void> worker() async {
+        while (pending.isNotEmpty) {
+          if (t.cancelRequested) return;
+          final i = pending.removeLast();
+          final pg = pages[i];
+          final ref = ResourceRef(
+            path: pg.path,
+            scheme: t.scheme ?? ImageScheme.perImage,
+            key: pg.key,
+            iv: pg.iv,
+          );
+          final b = await resources.fetchDecrypted(t.kind, ref);
+          if (b.isEmpty) throw StateError('第 ${i + 1} 页为空');
+          // 逐页落临时文件，避免把整本图片同时驻留内存。
+          await File(p.join(tmp.path, names[i])).writeAsBytes(b, flush: true);
+          done++;
+          bytes += b.length;
+          t.done = done;
+          t.bytes = bytes;
+          t.label = '$done/${pages.length}';
+          notifyListeners();
+        }
+      }
+
+      await Future.wait(
+          List.generate(concurrency.clamp(1, 8), (_) => worker()));
+
+      if (t.cancelRequested) {
+        await _finishCancelled(t);
+        return;
+      }
+
+      final files = <String>[
+        for (var i = 0; i < pages.length; i++) p.join(tmp.path, names[i]),
+      ];
+      for (var i = 0; i < files.length; i++) {
+        if (!File(files[i]).existsSync()) throw StateError('第 ${i + 1} 页下载失败');
+      }
+      await _zipFiles(files, names, zipPath);
+      if (exportToGallery) {
+        unawaited(_saveImagesToGallery(t, files));
+      }
+
+      t
+        ..status = DownloadStatus.done
+        ..outputPath = zipPath
+        ..decryptedUrl = zipPath
+        ..bytes = bytes
+        ..label = '完成'
+        ..speed = 0;
+      await _upsertRecord(
+        t,
+        status: 'done',
+        filePath: zipPath,
+        encryptedUrl: firstUrl,
+        keyUrl: t.keyUrl,
+        decryptedUrl: zipPath,
+        totalBytes: bytes,
+      );
+      _notifyDone(t);
+      notifyListeners();
+    } finally {
+      await _deleteDir(tmp.path);
+    }
+  }
+
+  /// 图片文件名（0001.jpg …，与 zip 内条目名一致，保证按序）。
+  static List<String> _imageNames(int count) => [
+        for (var i = 0; i < count; i++)
+          '${(i + 1).toString().padLeft(4, '0')}.jpg',
+      ];
+
+  /// 并行下载并解密页表到 [dir]，返回按序的文件路径（缺页即抛）。
+  Future<List<String>> _fetchImagesToDir({
+    required ContentKind kind,
+    required List<ReadPage> pages,
+    required ImageScheme scheme,
+    required Directory dir,
+  }) async {
+    final names = _imageNames(pages.length);
+    final pending = <int>[for (var i = 0; i < pages.length; i++) i];
     Future<void> worker() async {
       while (pending.isNotEmpty) {
-        if (t.cancelRequested) return;
         final i = pending.removeLast();
         final pg = pages[i];
-        final ref = ResourceRef(
-          path: pg.path,
-          scheme: t.scheme ?? ImageScheme.perImage,
-          key: pg.key,
-          iv: pg.iv,
+        final b = await resources.fetchDecrypted(
+          kind,
+          ResourceRef(path: pg.path, scheme: scheme, key: pg.key, iv: pg.iv),
         );
-        final b = await resources.fetchDecrypted(t.kind, ref);
-        results[i] = b;
-        done++;
-        bytes += b.length;
-        t.done = done;
-        t.bytes = bytes;
-        t.label = '$done/${pages.length}';
-        notifyListeners();
+        if (b.isEmpty) throw StateError('第 ${i + 1} 页为空');
+        await File(p.join(dir.path, names[i])).writeAsBytes(b, flush: true);
       }
     }
 
     await Future.wait(
         List.generate(concurrency.clamp(1, 8), (_) => worker()));
-
-    if (t.cancelRequested) {
-      await _finishCancelled(t);
-      return;
+    final files = <String>[for (final n in names) p.join(dir.path, n)];
+    for (var i = 0; i < files.length; i++) {
+      if (!File(files[i]).existsSync()) throw StateError('第 ${i + 1} 页下载失败');
     }
-
-    final archive = Archive();
-    for (var i = 0; i < results.length; i++) {
-      final b = results[i];
-      if (b == null) throw StateError('第 ${i + 1} 页下载失败');
-      final name = '${(i + 1).toString().padLeft(4, '0')}.jpg';
-      archive.addFile(ArchiveFile(name, b.length, b));
-    }
-    final zipBytes = ZipEncoder().encode(archive) ?? Uint8List(0);
-    await File(zipPath).writeAsBytes(zipBytes);
-
-    t
-      ..status = DownloadStatus.done
-      ..outputPath = zipPath
-      ..decryptedUrl = zipPath
-      ..bytes = bytes
-      ..label = '完成'
-      ..speed = 0;
-    await _upsertRecord(
-      t,
-      status: 'done',
-      filePath: zipPath,
-      encryptedUrl: firstUrl,
-      keyUrl: t.keyUrl,
-      decryptedUrl: zipPath,
-      totalBytes: bytes,
-    );
-    if (exportToGallery) {
-      unawaited(_saveImagesToGallery(t, results));
-    }
-    _notifyDone(t);
-    notifyListeners();
+    return files;
   }
 
-  /// 把已解密的图片写入相册并通知系统媒体库。
+  /// 把磁盘上的图片**流式**压成 zip（逐条写盘，内存只驻留单张图片）。
+  static Future<void> _zipFiles(
+      List<String> files, List<String> names, String zipPath) async {
+    final enc = ZipFileEncoder();
+    enc.create(zipPath, level: ZipFileEncoder.GZIP);
+    try {
+      for (var i = 0; i < files.length; i++) {
+        await enc.addFile(File(files[i]), names[i]);
+      }
+    } finally {
+      await enc.close();
+    }
+  }
+
+  /// 把已解密的图片写入相册并通知系统媒体库（从临时文件读取，不再整本驻留内存）。
   Future<void> _saveImagesToGallery(
-      DownloadTask t, List<Uint8List?> images) async {
+      DownloadTask t, List<String> files) async {
     try {
       final dir = await service.galleryDir(_safeName(t.title));
       if (dir == null) return;
-      for (var i = 0; i < images.length; i++) {
-        final b = images[i];
-        if (b == null) continue;
+      for (var i = 0; i < files.length; i++) {
+        final src = File(files[i]);
+        if (!src.existsSync()) continue;
         final f = File(
             p.join(dir.path, '${(i + 1).toString().padLeft(4, '0')}.jpg'));
-        await f.writeAsBytes(b);
+        await f.writeAsBytes(await src.readAsBytes());
         await service.scanMedia(f.path);
       }
     } catch (_) {}
@@ -647,7 +726,8 @@ class DownloadManager extends ChangeNotifier {
     final chapters = t.chapters ?? const <ResourceRef>[];
     if (chapters.isEmpty) throw StateError('无章节');
     final dir = await service.subDir(t.kind.label);
-    final outPath = p.join(dir.path, '${_safeName(t.title, t.id)}.txt');
+    final outPath = p.join(
+        dir.path, '${_safeName(t.title, t.id)}${t.suffix.isEmpty ? '' : '_${_safeName(t.suffix, '')}'}.txt');
     final firstUrl = chapters.isEmpty
         ? null
         : resources.urlFor(t.kind, chapters.first.path);

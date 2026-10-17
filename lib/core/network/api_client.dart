@@ -83,8 +83,10 @@ class ApiErrorInterceptor extends Interceptor {
   String? _message(Response? res) {
     if (res == null) return null;
     final d = res.data;
-    if (d is Map && d['error'] is String) return d['error'] as String;
-    if (d is Map && d['message'] is String) return d['message'] as String;
+    // 统一走 extractApiMessage：兼容 {error:".."} / {error:{message:".."}} /
+    // {message:".."} 等信封，避免 Map 型 error 被漏掉退化成 network error。
+    final msg = extractApiMessage(d);
+    if (msg.isNotEmpty) return msg;
     if (d is String) return d.length > 300 ? '${d.substring(0, 300)}…' : d;
     return null;
   }

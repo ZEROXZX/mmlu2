@@ -22,6 +22,10 @@ class _FakeApi extends ApiService {
   Object? addResult;
   final favBySource = <String, List<Map<String, dynamic>>>{};
 
+  /// kind -> page -> 数据（用于分页/精确收藏判定测试）。
+  final pagedFavorites = <String, Map<int, List<Map<String, dynamic>>>>{};
+  final favPageCalls = <String>[];
+
   @override
   Future<Object?> photoRead({
     required int id,
@@ -35,8 +39,12 @@ class _FakeApi extends ApiService {
 
   @override
   Future<Object?> favorites(String kind,
-          {int counts = 20, int pages = 1, String? source}) async =>
-      {'data': favBySource['$kind:${source ?? ''}'] ?? const []};
+      {int counts = 20, int pages = 1, String? source}) async {
+    favPageCalls.add('$kind:${source ?? ''}:$pages');
+    final paged = pagedFavorites['$kind:${source ?? ''}'];
+    if (paged != null) return {'data': paged[pages] ?? const []};
+    return {'data': favBySource['$kind:${source ?? ''}'] ?? const []};
+  }
 
   @override
   Future<Object?> addFavorite(String kind, int id, {String? source}) async {
@@ -210,6 +218,48 @@ void main() {
         () => repo.addFavorite(ContentKind.animat, 7, source: 'ns'),
         throwsA(isA<ApiException>()),
       );
+    });
+  });
+
+  group('收藏精确判定（isFavorite 分页遍历）', () {
+    List<Map<String, dynamic>> page(int from, int count) => [
+          for (var i = 0; i < count; i++)
+            {'id': from + i, 'name': 'x${from + i}'},
+        ];
+
+    test('目标在第 2 页时也能判定为已收藏（不再只看首页）', () async {
+      api.pagedFavorites['fiction:'] = {
+        1: page(1, 50),
+        2: [
+          {'id': 77, 'name': 'deep'},
+        ],
+      };
+      expect(await repo.isFavorite(ContentKind.fiction, 77), isTrue);
+      expect(api.favPageCalls, containsAllInOrder(['fiction::1', 'fiction::2']));
+    });
+
+    test('翻到不足一页即到底 → 未收藏，且不无限翻页', () async {
+      api.pagedFavorites['fiction:'] = {1: page(1, 3)};
+      expect(await repo.isFavorite(ContentKind.fiction, 999), isFalse);
+      expect(api.favPageCalls, ['fiction::1']);
+    });
+
+    test('动漫按 source 精确匹配（同 id 不同 source 不算命中）', () async {
+      api.pagedFavorites['animat:ns'] = {
+        1: [
+          {'id': 5, 'name': 'ns5', 'source': 'ns'},
+        ],
+      };
+      api.pagedFavorites['animat:av'] = {
+        1: [
+          {'id': 5, 'name': 'av5', 'source': 'av'},
+        ],
+      };
+      expect(await repo.isFavorite(ContentKind.animat, 5, source: 'av'), isTrue);
+      expect(await repo.isFavorite(ContentKind.animat, 5, source: 'ns'), isTrue);
+      // 不存在的 source 不应命中同 id 的其它 source。
+      expect(await repo.isFavorite(ContentKind.animat, 5, source: 'xx'),
+          isFalse);
     });
   });
 }

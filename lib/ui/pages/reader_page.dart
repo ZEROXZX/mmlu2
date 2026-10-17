@@ -132,7 +132,7 @@ class _PageViewerState extends State<_PageViewer> {
   }
 }
 
-class _PageImage extends StatelessWidget {
+class _PageImage extends StatefulWidget {
   const _PageImage({required this.service, required this.kind, required this.ref});
 
   final ResourceService service;
@@ -140,28 +140,48 @@ class _PageImage extends StatelessWidget {
   final ResourceRef ref;
 
   @override
-  Widget build(BuildContext context) {
-    final key = '${kind.tag}:${ref.path}';
+  State<_PageImage> createState() => _PageImageState();
+}
+
+class _PageImageState extends State<_PageImage> {
+  late Future<Uint8List> _future = _load();
+
+  Future<Uint8List> _load() async {
+    final key = '${widget.kind.tag}:${widget.ref.path}';
     final cached = _ReaderPageState._cache[key];
-    final future = cached != null
-        ? Future.value(cached)
-        : service.fetchDecrypted(kind, ref).then((b) {
-            _ReaderPageState._cache[key] = b;
-            return b;
-          });
+    if (cached != null) return cached;
+    final b = await widget.service.fetchDecrypted(widget.kind, widget.ref);
+    if (b.isNotEmpty) {
+      // 限制缓存规模，避免翻长漫时无上限增长。
+      if (_ReaderPageState._cache.length > 200) _ReaderPageState._cache.clear();
+      _ReaderPageState._cache[key] = b;
+    }
+    return b;
+  }
+
+  void _retry() => setState(() => _future = _load());
+
+  @override
+  Widget build(BuildContext context) {
     return InteractiveViewer(
       maxScale: 4,
       child: Center(
         child: FutureBuilder<Uint8List>(
-          future: future,
+          future: _future,
           builder: (context, snap) {
             if (snap.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
-            if (snap.hasError || snap.data == null) {
-              return const Icon(Icons.broken_image_outlined, color: Colors.grey, size: 40);
+            final b = snap.data;
+            if (snap.hasError || b == null || b.isEmpty) {
+              return TextButton.icon(
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh, color: Colors.grey),
+                label: const Text('加载失败，点击重试',
+                    style: TextStyle(color: Colors.grey)),
+              );
             }
-            return Image.memory(snap.data!, fit: BoxFit.contain);
+            return Image.memory(b, fit: BoxFit.contain);
           },
         ),
       ),

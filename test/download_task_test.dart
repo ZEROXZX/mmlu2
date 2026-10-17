@@ -106,6 +106,29 @@ void main() {
       expect(mgr.hasTask('comicNs_5'), isTrue);
       expect(mgr.hasTask('animat_5'), isFalse);
     });
+
+    test('scope 非空时 id 带稳定哈希，互不覆盖（单章/选集 vs 全本）', () {
+      final full = mgr.addFiction(
+          item: item(id: 9, kind: ContentKind.fiction), chapters: const []);
+      final one = mgr.addFiction(
+          item: item(id: 9, kind: ContentKind.fiction),
+          chapters: const [],
+          scope: '第3章');
+      expect(full, 'fiction_9');
+      expect(one, startsWith('fiction_9_'));
+      expect(one, isNot(full), reason: '单章不应复用全本 id');
+      expect(mgr.tasks.map((t) => t.id).toSet().length, 2);
+
+      final imgFull = mgr.addImages(
+          item: item(id: 5, kind: ContentKind.comicNs), pages: const []);
+      final imgSub = mgr.addImages(
+          item: item(id: 5, kind: ContentKind.comicNs),
+          pages: const [],
+          scope: '选2章');
+      expect(imgFull, 'comicNs_5');
+      expect(imgSub, startsWith('comicNs_5_'));
+      expect(mgr.tasks.map((t) => t.id).toSet().length, 4);
+    });
   });
 
   group('暂停 / 恢复 / 取消（视频）', () {

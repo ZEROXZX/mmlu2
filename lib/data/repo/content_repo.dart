@@ -237,6 +237,25 @@ class ContentRepo {
     return _parseItems(kind, res);
   }
 
+  /// 某条内容是否已收藏（分页遍历直至命中或到底，**不只看第一页**）。
+  Future<bool> isFavorite(ContentKind kind, int id, {String? source}) async {
+    const counts = 50;
+    for (var page = 1; page <= 40; page++) {
+      final items = await favorites(kind, pages: page, counts: counts);
+      for (final it in items) {
+        if (it.id == id &&
+            (kind != ContentKind.animat ||
+                (it.source ?? '') == (source ?? ''))) {
+          return true;
+        }
+      }
+      // 非动漫：本页不足一页即到底。动漫为 AV+NS 合并，用并集数量判断不精确，
+      // 保守继续翻页直到上限（40 页），避免漏判。
+      if (kind != ContentKind.animat && items.length < counts) return false;
+    }
+    return false;
+  }
+
   Future<List<ContentItem>> histories(ContentKind kind, {int range = 1, int pages = 1, int counts = 20}) async {
     final res = await _api.histories(kind.tag, range: range, pages: pages, counts: counts);
     return _parseItems(kind, res);

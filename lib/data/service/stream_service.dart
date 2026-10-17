@@ -182,7 +182,11 @@ class StreamService {
   }) async {
     if (info.segments.isEmpty) throw StateError('m3u8 无分片');
     Directory(partDir).createSync(recursive: true);
-    final key = await fetchKey(info.keyUri!, cancelToken: cancelToken);
+    // 无 `#EXT-X-KEY` 的明文流：key 为 null，分片原样落盘（不再直接 ! 崩）。
+    final keyUri = info.keyUri;
+    final key = (keyUri == null || keyUri.isEmpty)
+        ? null
+        : await fetchKey(keyUri, cancelToken: cancelToken);
 
     final total = info.segments.length;
     final pending = <int>[];
@@ -206,7 +210,7 @@ class StreamService {
         if (shouldPause?.call() ?? false) return;
         final i = pending.removeLast();
         final ct = await _getBytes(info.segments[i], cancelToken: cancelToken);
-        final pt = decryptSegment(ct, key, info.iv);
+        final pt = key == null ? ct : decryptSegment(ct, key, info.iv);
         await File(p.join(partDir, partName(i))).writeAsBytes(pt, flush: true);
         done++;
         bytes += pt.length;
@@ -250,7 +254,8 @@ class StreamService {
         );
       }
       try {
-        final r = await Dio().get<List<int>>(
+        // 复用构造里的 [_dio]（连接池），不再每次 new Dio()。
+        final r = await _dio.get<List<int>>(
           url,
           cancelToken: cancelToken,
           options: Options(

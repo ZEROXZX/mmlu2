@@ -39,7 +39,11 @@ class CoverImage extends StatelessWidget {
         if (c == null || !c.isValid) return null;
         bytes = await rs.fetchDecrypted(item.kind, c);
       }
-      if (bytes.isNotEmpty) _cache[key] = bytes;
+      if (bytes.isNotEmpty) {
+        // 进程内缓存：超上限整体清空，避免浏览大量条目后无上限增长。
+        if (_cache.length > 500) _cache.clear();
+        _cache[key] = bytes;
+      }
       return bytes;
     } catch (_) {
       return null;
