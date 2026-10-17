@@ -27,23 +27,26 @@ class _DownloadsPageState extends State<DownloadsPage> {
       return !mgr.hasTask(r.id);
     }).toList();
 
-    if (tasks.isEmpty && records.isEmpty) {
-      return const EmptyView(text: '暂无下载记录');
-    }
-
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
         _toolbar(context, mgr, tasks),
-        if (tasks.isNotEmpty) ...[
-          _sectionHeader('下载任务 (${tasks.length})'),
-          for (final t in tasks) _taskTile(context, mgr, t),
-        ],
-        if (records.isNotEmpty) ...[
-          if (tasks.isNotEmpty) const SizedBox(height: 8),
-          _sectionHeader('历史记录 (${records.length})'),
-          if (_selected.isNotEmpty) _selectionBar(context, records),
-          for (final r in records) _recordTile(context, r),
+        if (tasks.isEmpty && records.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 80),
+            child: EmptyView(text: '暂无下载记录'),
+          )
+        else ...[
+          if (tasks.isNotEmpty) ...[
+            _sectionHeader('下载任务 (${tasks.length})'),
+            for (final t in tasks) _taskTile(context, mgr, t),
+          ],
+          if (records.isNotEmpty) ...[
+            if (tasks.isNotEmpty) const SizedBox(height: 8),
+            _sectionHeader('历史记录 (${records.length})'),
+            if (_selected.isNotEmpty) _selectionBar(context, records),
+            for (final r in records) _recordTile(context, r),
+          ],
         ],
       ],
     );
@@ -56,7 +59,10 @@ class _DownloadsPageState extends State<DownloadsPage> {
     final finished = mgr.finishedTasks.length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           PopupMenuButton<int>(
             tooltip: '下载线程数',
@@ -75,7 +81,20 @@ class _DownloadsPageState extends State<DownloadsPage> {
               visualDensity: VisualDensity.compact,
             ),
           ),
-          const Spacer(),
+          // 图集/漫画下载后是否额外导出单图到相册（默认关，避免与 zip 重复占空间）。
+          FilterChip(
+            avatar: Icon(
+              mgr.exportToGallery
+                  ? Icons.photo_library
+                  : Icons.photo_library_outlined,
+              size: 18,
+            ),
+            label: const Text('导出相册'),
+            selected: mgr.exportToGallery,
+            onSelected: (v) => mgr.exportToGallery = v,
+            visualDensity: VisualDensity.compact,
+            tooltip: '漫画/图集下载后，除 zip 外再存一份单图到相册 Pictures/mmlu',
+          ),
           if (finished > 0)
             TextButton.icon(
               onPressed: () => _confirmClearFinished(context, mgr),

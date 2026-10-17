@@ -511,7 +511,10 @@ Header: Authorization: Bearer <token>
 https://na.mmlu1.site/apen/<avkey>/ts/<avkey>-0.ts
 ...（数十~数百个分片）
 ```
-- URI 可能省略 `https://` 前缀（v2 路径常见）；无签名 URL（v3 路径）可直接下载。
+- URI 可能省略 `https://` 前缀（v2/AV 路径常见，形如
+  `URI="stream-encrypt1.mmlutech.xyz/apen/.../key.php?Expires=...&Key-Pair-Id=..."`）；
+  **解析时必须补全 scheme**，否则请求报 `DioException: No host specified in URI`。
+  分片行也可能为协议相对 `//host/...` → 补 `https:`。无签名 URL（v3 路径）可直接下载。
 
 ### 9B.3b 分片解密（HLS AES-128，⭐实测通过）
 
@@ -652,12 +655,16 @@ App 启动本地 HTTP 服务 `http://localhost:1140`，把播放地址指到本�
 
 | 操作 | 接口 |
 |---|---|
-| 列表 | `GET v2/{type}/favorite?counts=&pages=` → `{lastPage,total,data[]}` |
+| 列表(动画/小说) | `GET v2/{type}/favorite?counts=&pages=` → `{lastPage,total,data[]}` |
+| 列表(漫画 ns) | `GET v3/comic/ns/favorite?counts=&pages=` |
+| 列表(漫画 av) | `GET v3/comic/data/favorite?counts=&pages=` |
 | 添加 | `PUT v2/animat/favorite/{animate_id}` · `PUT v2/fiction/favorite/{fiction_id}` · `PUT v3/comic/ns/favorite/{comic_id}` · `PUT v3/comic/data/favorite/{comic_id}` |
 | 删除 | `DELETE v2/{type}/favorite?ids=<id[,id...]>`（逗号分隔） |
 | 清空 | `DELETE v2/{type}/favoriteAll` · `v3/{type}/data/favoriteAll` · `v3/{type}/ns/favoriteAll` |
 
-- `{type}` = `animat` / `comic` / `fiction`（图集 photo **无**收藏接口）。
+- `{type}` = `animat` / `fiction`（图集 photo **无**收藏接口）。
+- ⚠ **漫画收藏列表必须用 v3**：`v2/comic/favorite` 已失效（稳定 500/502，两个 api 域均然）；
+  正确为 `v3/comic/ns/favorite`（ns）与 `v3/comic/data/favorite`（av），实测 200。
 - 添加返回 `{data:{id, user_id, <x>_id, created_at, updated_at}}`；删除返回 `{data:<删除条数>}`。
 - 实测周期（均已复原）：动画 48→47→48（`PUT .../favorite/733`）；漫画 ns 0→1→0；漫画 av PUT/DELETE 通；小说 PUT/DELETE 通。
 
@@ -669,12 +676,15 @@ App 启动本地 HTTP 服务 `http://localhost:1140`，把播放地址指到本�
 | 写(小说) | `PUT v2/fiction/history/{fiction_id}` | `percent`(F) |
 | 写(漫画 ns) | `PUT v3/comic/ns/history/{chapter_id}` | `last_page`(I) |
 | 写(漫画 av) | `PUT v3/comic/data/history/{chapter_id}` | `last_page`(I) |
-| 列表 | `GET v2/{type}/history?range=&counts=&pages=` | `range` **必填且 ∈{1,2}** |
+| 列表(动画/小说) | `GET v2/{type}/history?range=&counts=&pages=` | `range` **必填且 ∈{1,2}**（0 → 400） |
+| 列表(漫画 ns) | `GET v3/comic/ns/history?range=&counts=&pages=` | 同上 |
 | 删除 | `DELETE v2/{type}/history?ids=` | — |
 
 - 写入返回 `{data:"success"}` 或 `{data:{id,user_id,<x>_id,updated_at}}`（实测 200）。
-- ⚠ **列表** `v2/{type}/history` 实测当前：动画返回 `total:0`、漫画/小说返回 500/502——**疑服务端问题**，
-  与写操作无关。第三方客户端可本地自行记录进度（`last_page`/`percent` 已知）。
+- ⚠ **动漫/小说列表** `v2/{type}/history` 实测多为 `total:0`（**非报错**，就是空）。
+- ⚠ **漫画列表必须用 v3** `v3/comic/ns/history`（实测 200，返回数据）；
+  旧的 `v2/comic/history` 已失效（500）。图集 photo **无**历史列表接口（404）。
+- `range` 服务端校验 `≥1`（`range=0` → `400 {"range":["The range must be at least 1."]}`）。
 
 ### 9D.3 举报（ReportBody 字段已探明）
 

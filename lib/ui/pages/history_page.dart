@@ -9,8 +9,8 @@ import 'detail_page.dart';
 
 /// 观看/阅读历史页。
 ///
-/// 注意：`GET v2/{type}/history` 服务端常返错（动画返空、漫画/小说 500/502，
-/// 见 PROTOCOL.md §9D），此处对错误做友好降级但仍可重试。
+/// 路径按种类区分：漫画走 `v3/comic/ns/history`（旧的 `v2/comic/history` 已失效），
+/// 动画/小说走 `v2/{type}/history`；`range` 须 ≥1（见 PROTOCOL.md §9D）。
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
 
@@ -54,8 +54,8 @@ class _HistoryPageState extends State<HistoryPage> {
               _range = v;
               _reload();
             }),
+            // 服务端要求 range ≥ 1（0 → 400），故不提供「全部」。
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 0, child: Text('全部')),
               PopupMenuItem(value: 1, child: Text('最近')),
               PopupMenuItem(value: 2, child: Text('更早')),
             ],

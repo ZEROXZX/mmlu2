@@ -14,14 +14,14 @@ class ContentRepo {
 
   // ---- banner ------------------------------------------------------------
 
-  Future<List<BannerItem>> getBanners({int type = 0}) async {
+  Future<List<BannerItem>> getBanners({int type = 1}) async {
     final res = await _api.comicBanner(type: type);
     final list = _asMapList(_asMap(res)['data'] ?? res);
     return list.map(BannerItem.fromJson).toList();
   }
 
   /// 各内容「最新 / 榜单 / 推荐」列表。
-  Future<List<ContentItem>> listNew(ContentKind kind, {int type = 0, int pages = 1, int counts = 20}) async {
+  Future<List<ContentItem>> listNew(ContentKind kind, {int type = 1, int pages = 1, int counts = 20}) async {
     final res = await switch (kind) {
       ContentKind.animat => _api.animatNew(type: type, pages: pages, counts: counts),
       ContentKind.comicNs => _api.comicNew(source: 'ns', type: type, pages: pages, counts: counts),
@@ -32,7 +32,7 @@ class ContentRepo {
     return _parseItems(kind, res);
   }
 
-  Future<List<ContentItem>> listRanking(ContentKind kind, {int type = 0, int pages = 1, int counts = 20, int range = 1}) async {
+  Future<List<ContentItem>> listRanking(ContentKind kind, {int type = 1, int pages = 1, int counts = 20, int range = 1}) async {
     final res = await switch (kind) {
       ContentKind.animat => _api.animatRanking(type: type, pages: pages, counts: counts, range: range),
       ContentKind.comicNs => _api.comicRanking(source: 'ns', type: type, pages: pages, counts: counts, range: range),
@@ -43,7 +43,7 @@ class ContentRepo {
     return _parseItems(kind, res);
   }
 
-  Future<List<ContentItem>> listRecommend(ContentKind kind, {int type = 0, int pages = 1, int counts = 20}) async {
+  Future<List<ContentItem>> listRecommend(ContentKind kind, {int type = 1, int pages = 1, int counts = 20}) async {
     final res = await switch (kind) {
       ContentKind.animat => _api.animatRecommend(type: type, pages: pages, counts: counts),
       ContentKind.comicNs => _api.comicRecommend(source: 'ns', type: type, pages: pages, counts: counts),
@@ -56,7 +56,7 @@ class ContentRepo {
 
   // ---- 搜索 --------------------------------------------------------------
 
-  Future<List<ContentItem>> search(ContentKind kind, String keywords, {int sort = 0, int pages = 1, int counts = 20}) async {
+  Future<List<ContentItem>> search(ContentKind kind, String keywords, {int sort = 1, int pages = 1, int counts = 20}) async {
     final res = await switch (kind) {
       ContentKind.comicNs => _api.searchNs('comic', keywords: keywords, sort: sort, pages: pages, counts: counts),
       ContentKind.comicAv => _api.searchData('comic', keywords: keywords, sort: sort, pages: pages, counts: counts),
@@ -109,7 +109,9 @@ class ContentRepo {
     }
 
     if (kind == ContentKind.photo) {
-      final item = ContentItem.fromJson(kind, map);
+      // photoRead 只返回页表（`{data:[...]}`，无 id/name），直接用它建 item 会丢 id，
+      // 导致 ReaderPage 再调 photoRead(id=0) → 500。显式补回传入的 id。
+      final item = ContentItem.fromJson(kind, {...map, 'id': id});
       // 图集详情是页表（无 samelike），相似作品走独立接口 v3/photo/similar。
       var similar = const <ContentItem>[];
       try {
@@ -173,12 +175,12 @@ class ContentRepo {
   // ---- 收藏 / 历史 --------------------------------------------------------
 
   Future<List<ContentItem>> favorites(ContentKind kind, {int pages = 1, int counts = 20}) async {
-    final res = await _api.favorites(_listType(kind), pages: pages, counts: counts);
+    final res = await _api.favorites(kind.tag, pages: pages, counts: counts);
     return _parseItems(kind, res);
   }
 
   Future<List<ContentItem>> histories(ContentKind kind, {int range = 1, int pages = 1, int counts = 20}) async {
-    final res = await _api.histories(_listType(kind), range: range, pages: pages, counts: counts);
+    final res = await _api.histories(kind.tag, range: range, pages: pages, counts: counts);
     return _parseItems(kind, res);
   }
 
@@ -193,19 +195,6 @@ class ContentRepo {
 
   Future<Object?> deleteHistory(ContentKind kind, List<int> ids) =>
       _api.deleteHistory(kind.tag, ids);
-
-  // ---- 工具 ----------------------------------------------------------
-
-  /// 收藏/历史列表用的 {type}（comicNs/comicAv → comic）。
-  static String _listType(ContentKind kind) {
-    switch (kind) {
-      case ContentKind.comicNs:
-      case ContentKind.comicAv:
-        return 'comic';
-      default:
-        return kind.tag;
-    }
-  }
 
   // ---- 解析工具 ----------------------------------------------------------
 

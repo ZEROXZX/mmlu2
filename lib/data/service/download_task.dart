@@ -124,6 +124,10 @@ class DownloadManager extends ChangeNotifier {
 
   static const String concurrencyKey = 'download_concurrency';
 
+  /// 图片下载（漫画/图集）完成后是否额外导出单图到相册 `Pictures/mmlu`。
+  /// 默认关闭：默认只产出 `Download/mmlu/<分类>/<id>.zip`，避免重复占空间。
+  static const String exportGalleryKey = 'download_export_gallery';
+
   final List<DownloadTask> _tasks = <DownloadTask>[];
 
   List<DownloadTask> get tasks => List.unmodifiable(_tasks);
@@ -140,6 +144,14 @@ class DownloadManager extends ChangeNotifier {
 
   set concurrency(int value) {
     prefs.setInt(concurrencyKey, value.clamp(1, 8));
+    notifyListeners();
+  }
+
+  /// 图片下载后是否额外导出单图到相册（默认 false）。
+  bool get exportToGallery => prefs.getBool(exportGalleryKey) ?? false;
+
+  set exportToGallery(bool value) {
+    prefs.setBool(exportGalleryKey, value);
     notifyListeners();
   }
 
@@ -278,6 +290,13 @@ class DownloadManager extends ChangeNotifier {
         await service.deleteLocal(p.join(dir.path, '${t.id}.$ext'));
       }
     } catch (_) {}
+    // 图片任务若曾导出相册，一并清理 Pictures/mmlu/<标题>。
+    if (t.type == DownloadType.image) {
+      try {
+        final g = await service.galleryDir(_safeName(t.title));
+        if (g != null) await _deleteDir(g.path);
+      } catch (_) {}
+    }
   }
 
   /// 清空已结束任务（仅终态）。
@@ -524,8 +543,8 @@ class DownloadManager extends ChangeNotifier {
       decryptedUrl: zipPath,
       totalBytes: bytes,
     );
-    // 图片另存一份进相册：Pictures/mmlu/<标题>/NNNN.jpg
-    await _saveImagesToGallery(t, results);
+    // 可选：另存一份进相册 Pictures/mmlu/<标题>/NNNN.jpg（默认关闭，见 exportToGallery）。
+    if (exportToGallery) await _saveImagesToGallery(t, results);
     _notifyDone(t);
     notifyListeners();
   }

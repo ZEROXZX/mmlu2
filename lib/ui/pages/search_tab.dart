@@ -39,9 +39,11 @@ class _SearchTabState extends State<SearchTab> {
               DropdownButton<ContentKind>(
                 value: _kind,
                 onChanged: (k) => setState(() => _kind = k ?? _kind),
+                // 图集无搜索接口（v2/v3/search/*/photo 均 404），故不提供。
                 items: [
                   for (final k in ContentKind.values)
-                    DropdownMenuItem(value: k, child: Text(k.label)),
+                    if (k != ContentKind.photo)
+                      DropdownMenuItem(value: k, child: Text(k.label)),
                 ],
               ),
               const SizedBox(width: 8),

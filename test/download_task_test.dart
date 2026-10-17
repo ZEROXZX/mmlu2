@@ -63,6 +63,18 @@ void main() {
     });
   });
 
+  group('相册导出开关（漫画/图集）', () {
+    test('默认关闭；可开启并持久化', () {
+      expect(mgr.exportToGallery, isFalse);
+      mgr.exportToGallery = true;
+      expect(mgr.exportToGallery, isTrue);
+      final again = makeManager();
+      expect(again.exportToGallery, isTrue);
+      again.exportToGallery = false;
+      expect(again.exportToGallery, isFalse);
+    });
+  });
+
   group('入队与去重', () {
     test('addVideo 生成 kind_id_quality，活动任务不重复入队', () {
       final a = mgr.addVideo(

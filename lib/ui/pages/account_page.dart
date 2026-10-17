@@ -48,6 +48,13 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
+  /// Unix 秒 → `yyyy-MM-dd`。
+  static String _fmtDate(int sec) {
+    final d = DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.read<AppContainer>();
@@ -108,8 +115,11 @@ class _AccountPageState extends State<AccountPage> {
               title: Text('区号：${info.countryCodes ?? '-'}'),
             ),
             ListTile(
-              leading: const Icon(Icons.verified_user_outlined),
-              title: Text('账号状态：${info.lock == 0 || info.lock == null ? '正常' : '受限'}'),
+              leading: const Icon(Icons.workspace_premium_outlined),
+              title: Text(info.isVip ? '会员：VIP' : '会员：普通用户'),
+              subtitle: info.levelExpiryAt == null
+                  ? null
+                  : Text('到期：${_fmtDate(info.levelExpiryAt!)}'),
             ),
             const Divider(),
             ListTile(

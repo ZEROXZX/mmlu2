@@ -183,7 +183,10 @@ signingConfigs {
 **文件落点**：
 - 下载到 `Download/mmlu/<分类>/`，分类为 **动画 / 漫画 / 小说 / 图集**
   （视频 `.mp4`、图片 `.zip`、小说 `.txt`）
-- **图片同时导出到相册**：`Pictures/mmlu/<标题>/0001.jpg …`，并通知系统媒体库
+- **图片（漫画/图集）默认只产出 `.zip`**，不再同时写相册，避免重复占地。
+  如需相册单图，在「下载」页顶部工具栏打开 **「导出相册」** 开关（默认关）——
+  开启后除 zip 外再写 `Pictures/mmlu/<标题>/0001.jpg …` 并通知系统媒体库；
+  删除该下载任务时对应的 `Pictures/mmlu/<标题>` 也会一并清理。
 - 视频完成后自动进入系统媒体库（相册/视频可见）
 - 临时分片在 `Download/mmlu/.parts_<id>/`，合并完成后自动删除
 
@@ -318,6 +321,26 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 > 注意：内容接口需官方账号（游客 token 访问内容返回 **495 unidentify**）。
 > 未登录可进 App 框架，但列表/播放等内容区可能为空或提示 495。
 
+### 6f. 内容接口大面积 400 / 图集详情 500 / 下载分片报「No host specified」【实测定位】
+
+登录后可进 App，但真机实测出现一批报错，根因是**客户端默认参数非法**与**路径选错**，
+均在沙箱用 `tools/mmlu_api.py` 逐条复现定位：
+
+| 真机现象 | 根因 | 修复 |
+|---|---|---|
+| 动漫/漫画/小说接口 400、分类除图集外全 400 | 服务端要求 `type ≥ 1`（`type=0` → `400 {"type":["The type must be at least 1."]}`） | `api_service.dart` 与 `content_repo.dart` 所有列表/分类默认 `type: 1` |
+| 搜索 400 | `sort` 须 ≥1（`sort=0` → `400 {"sort":[...]}`） | `search/searchData/searchNs` 默认 `sort: 1` |
+| 历史报错 | `range` 须 ≥1（`range=0` → `400 {"range":[...]}`） | `histories` 默认 `range: 1` 并 clamp；历史页去掉「全部(0)」 |
+| 收藏/历史 502（漫画） | 用了失效的旧路径 `v2/comic/favorite|history` | 改按种类取路径：comicNs → `v3/comic/ns/*`、comicAv → `v3/comic/data/*`、其余 → `v2/{kind}/*`（复用 `_favoriteBase`/`_historyBase`） |
+| 漫画 av 榜单/推荐为空 | `v2/comic/ranking|recommend` 已废弃（恒空） | 改用 `v3/comic/data/ranking|recommend` |
+| 图集只显示预览图、「查看全部图片」500 | `detail()` 用 `photoRead` 响应（`{data:[...]}` 无 id）建 item → `id=0` → `photoRead(0)` → 500 | 建 item 时显式补回传入 id（`{...map, 'id': id}`） |
+| 下载动漫分片失败 `No host specified in URI` | AV m3u8 的 `#EXT-X-KEY URI="stream-encrypt1.mmlutech.xyz/..."` **无 scheme**，`parseM3u8` 原样透传 | `parseM3u8` 归一化 keyUri/分片：无 scheme 补 `https://`，`//host` 补 `https:` |
+| 图集搜索 404 | `v2/v3/search/*/photo` 均 404（服务端无此路由） | 搜索下拉移除「图集」 |
+| 账号页显示「账号状态：受限」 | `lock` 语义未定（正常 VIP 账号 `lock=2`），原 UI「非 0 即受限」误导 | 移除该行，改显示会员(VIP/普通)与到期日 |
+
+> 仍属**服务端**问题、客户端无法修（已做容错/降级）：`v3/photo/similar` 常 502、
+> `api1.mmlu.services` 密集请求时约 50% `Connection reset`、`v2/user/info` 偶发 502。
+
 ---
 
 ## 7. 常见错误速查（均为沙箱实测）
@@ -328,6 +351,10 @@ int? _intv(Object? v) => v is int ? v : (v is num ? v.toInt() : (v is String ? i
 | **release 能启动但所有网络失败** | main manifest 缺 INTERNET 权限 | §6c：加 `<uses-permission ... INTERNET/>` |
 | 登录报 `type 'int' is not a subtype of type 'String?' in type cast` | 服务端 `userId`/`UUID` 等返回 int，代码 `as String?` 强转 | §6d：宽松转换 `_str()` |
 | 打开即登录页、无法跳过 | `isLoggedIn` 误判 + `home` 强制登录 | §6e：`home: HomeShell()` + 独立登录标记 |
+| 大批内容接口 400（动漫/漫画/小说/分类/搜索） | `type`/`sort`/`range` 传了 0，服务端要求 ≥1 | §6f：默认改 1 并 clamp |
+| 收藏/历史 502、漫画 av 榜单为空 | 旧 `v2/comic/*` 路径失效 | §6f：改 `v3/comic/ns|data/*` |
+| 图集「查看全部图片」500 | 详情 item 丢 id（=0）→ `photoRead(0)` | §6f：建 item 时补回 id |
+| 下载分片 `No host specified in URI` | m3u8 的 KEY URI 无 scheme | §6f：`parseM3u8` 补 `https://` |
 | `java.net.ConnectException ... services.gradle.org`（Gradle wrapper 卡住） | 官方分发包域名不通/重定向到不通的 CDN | §3 腾讯镜像 distributionUrl（本包已配） |
 | 下载中 `Connection reset`（大文件中途断） | 网络对大文件不稳 | 用 `wget -c`/`curl -C -` 断点续传下载到本地，distributionUrl 改 `file:/本机路径/gradle-9.3.1-bin.zip`（实测 137MB 成功） |
 | `Could not resolve ... maven.google.com` / `google()` 超时 | Google Maven 不通 | §3 sed 替换（工程内 2 处本包已改；**Flutter SDK 内 2 处需自己改**） |
@@ -374,7 +401,7 @@ mmlu_client/
 │   │   ├── stream_service.dart     # 分片拉取+解密+断点续传
 │   │   └── download_service.dart   # FFmpeg 转码 / 产物目录
 │   └── ui/pages/          # 首页/详情/播放器/阅读器/下载/历史/搜索/账号…
-├── test/                   # 43 例单元测试
+├── test/                   # 46 例单元测试
 ├── docs/
 │   ├── PROTOCOL.md         # 完整协议逆向（鉴权/取流/解密/写操作/14 密钥）
 │   ├── REQUIREMENTS.md     # 需求清单 + 实现进度

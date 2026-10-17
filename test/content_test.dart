@@ -80,6 +80,27 @@ https://na.mmlu1.site/apen/ABC/ts/ABC-1.ts
       final info = StreamService.parseM3u8(text);
       expect(info.segments.single, 'https://na.mmlu1.site/apen/X/ts/X-0.ts');
     });
+
+    test('无 scheme 的 KEY URI 补 https（AV 动漫常见）', () {
+      const text = '#EXTM3U\n'
+          '#EXT-X-KEY:METHOD=AES-128,'
+          'URI="stream-encrypt1.mmlutech.xyz/apen/ABC/key.php?Expires=1&Key-Pair-Id=K"\n'
+          'stream-shturl.cc/apen/ABC/ts/ABC-0.ts\n';
+      final info = StreamService.parseM3u8(text);
+      expect(info.keyUri,
+          'https://stream-encrypt1.mmlutech.xyz/apen/ABC/key.php?Expires=1&Key-Pair-Id=K');
+      expect(info.segments.single,
+          'https://stream-shturl.cc/apen/ABC/ts/ABC-0.ts');
+    });
+
+    test('协议相对（//host）的 KEY URI 与分片补 https:', () {
+      const text = '#EXTM3U\n'
+          '#EXT-X-KEY:METHOD=AES-128,URI="//cdn.example.com/k.php"\n'
+          '//cdn.example.com/ts/0.ts\n';
+      final info = StreamService.parseM3u8(text);
+      expect(info.keyUri, 'https://cdn.example.com/k.php');
+      expect(info.segments.single, 'https://cdn.example.com/ts/0.ts');
+    });
   });
 
   group('ContentItem 解析', () {

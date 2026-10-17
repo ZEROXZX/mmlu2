@@ -55,6 +55,8 @@ class Endpoints {
   static const String comicDataHistory = 'v3/comic/data/history';
   static String comicDataHistoryId(int id) => 'v3/comic/data/history/$id';
   static const String comicDataNew = 'v3/comic/data/new';
+  static const String comicDataRanking = 'v3/comic/data/ranking';
+  static const String comicDataRecommend = 'v3/comic/data/recommend';
   static const String comicDataRead = 'v3/comic/data/read';
   static const String comicNsCategory = 'v3/comic/ns/category';
   static const String comicNsClassicDetail = 'v3/comic/ns/classic/detail';

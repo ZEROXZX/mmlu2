@@ -220,7 +220,7 @@ class ApiService {
 
   // ---- 04 漫画 -------------------------------------------------------------
 
-  Future<Object?> comicIndex({int type = 0, int platform = 1}) =>
+  Future<Object?> comicIndex({int type = 1, int platform = 1}) =>
       _get(DomainType.apiData, Endpoints.comicIndex,
           query: {'type': type, 'platform': platform});
 
@@ -253,7 +253,7 @@ class ApiService {
   // ---- 05 动画 -------------------------------------------------------------
 
   Future<Object?> animatIndex({
-    int type = 0,
+    int type = 1,
     int platform = 1,
     bool userType = false,
     String? xPackage,
@@ -273,7 +273,7 @@ class ApiService {
 
   // ---- 06 小说 -------------------------------------------------------------
 
-  Future<Object?> fictionIndex({int type = 0, int platform = 1}) =>
+  Future<Object?> fictionIndex({int type = 1, int platform = 1}) =>
       _get(DomainType.apiData, Endpoints.fictionIndex,
           query: {'type': type, 'platform': platform});
 
@@ -285,14 +285,20 @@ class ApiService {
 
   // ---- 07 收藏 / 历史 ------------------------------------------------------
 
-  Future<Object?> favorites(String type, {int counts = 0, int pages = 0}) =>
-      _get(DomainType.apiData, Endpoints.collectFavorite(type),
+  /// 收藏列表。[kind] 传 `ContentKind.tag`（comicNs/comicAv/animat/fiction）。
+  ///
+  /// 路径按种类区分：comicNs → `v3/comic/ns/favorite`，comicAv →
+  /// `v3/comic/data/favorite`，其余 → `v2/{kind}/favorite`。
+  /// （旧的 `v2/comic/favorite` 服务端已失效，返 500/502。）
+  Future<Object?> favorites(String kind, {int counts = 20, int pages = 1}) =>
+      _get(DomainType.apiData, _favoriteBase(kind),
           query: {'counts': counts, 'pages': pages});
 
-  Future<Object?> histories(String type,
-          {int range = 0, int counts = 0, int pages = 0}) =>
-      _get(DomainType.apiData, Endpoints.collectHistory(type),
-          query: {'range': range, 'counts': counts, 'pages': pages});
+  /// 历史列表。[range] 服务端要求 ≥1（0 → 400）。[kind] 同 [favorites]。
+  Future<Object?> histories(String kind,
+          {int range = 1, int counts = 20, int pages = 1}) =>
+      _get(DomainType.apiData, _historyBase(kind),
+          query: {'range': range < 1 ? 1 : range, 'counts': counts, 'pages': pages});
 
   // ---- 08 搜索 -------------------------------------------------------------
 
@@ -301,7 +307,7 @@ class ApiService {
 
   Future<Object?> search(String type, {
     required String keywords,
-    int sort = 0,
+    int sort = 1,
     int pages = 1,
     int counts = 20,
   }) =>
@@ -314,7 +320,7 @@ class ApiService {
 
   Future<Object?> searchData(String type, {
     required String keywords,
-    int sort = 0,
+    int sort = 1,
     int pages = 1,
     int counts = 20,
   }) =>
@@ -327,7 +333,7 @@ class ApiService {
 
   Future<Object?> searchNs(String type, {
     required String keywords,
-    int sort = 0,
+    int sort = 1,
     int pages = 1,
     int counts = 20,
   }) =>
@@ -340,62 +346,62 @@ class ApiService {
 
   // ---- 09 首页 / 榜单 / 推荐 / 分类 ---------------------------------------
 
-  Future<Object?> comicBanner({int type = 0, int platform = 1}) =>
+  Future<Object?> comicBanner({int type = 1, int platform = 1}) =>
       _get(DomainType.apiData, Endpoints.comicBanner,
           query: {'type': type, 'platform': platform});
 
-  Future<Object?> comicNew({String source = 'ns', int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> comicNew({String source = 'ns', int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData,
           source == 'av' ? Endpoints.comicDataNew : Endpoints.comicNsNew,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> comicRanking({String source = 'ns', int type = 0, int counts = 20, int pages = 1, int range = 1}) =>
+  Future<Object?> comicRanking({String source = 'ns', int type = 1, int counts = 20, int pages = 1, int range = 1}) =>
       _get(DomainType.apiData,
-          source == 'av' ? Endpoints.comicRanking : Endpoints.comicNsRanking,
+          source == 'av' ? Endpoints.comicDataRanking : Endpoints.comicNsRanking,
           query: {'type': type, 'counts': counts, 'pages': pages, 'range': range});
 
-  Future<Object?> comicRecommend({String source = 'ns', int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> comicRecommend({String source = 'ns', int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData,
-          source == 'av' ? Endpoints.comicRecommend : Endpoints.comicNsRecommend,
+          source == 'av' ? Endpoints.comicDataRecommend : Endpoints.comicNsRecommend,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> comicNsCategory({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> comicNsCategory({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.comicNsCategory,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> animatNew({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> animatNew({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.nsAnimatNew,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> animatRanking({int type = 0, int counts = 20, int pages = 1, int range = 1}) =>
+  Future<Object?> animatRanking({int type = 1, int counts = 20, int pages = 1, int range = 1}) =>
       _get(DomainType.apiData, Endpoints.nsAnimatRanking,
           query: {'type': type, 'counts': counts, 'pages': pages, 'range': range});
 
-  Future<Object?> animatRecommend({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> animatRecommend({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.nsAnimatRecommend,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> fictionNew({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> fictionNew({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.fictionNew,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> fictionRanking({int type = 0, int counts = 20, int pages = 1, int range = 1}) =>
+  Future<Object?> fictionRanking({int type = 1, int counts = 20, int pages = 1, int range = 1}) =>
       _get(DomainType.apiData, Endpoints.fictionRanking,
           query: {'type': type, 'counts': counts, 'pages': pages, 'range': range});
 
-  Future<Object?> fictionRecommend({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> fictionRecommend({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.fictionRecommend,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> photoNew({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> photoNew({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.photoNew,
           query: {'type': type, 'counts': counts, 'pages': pages});
 
-  Future<Object?> photoRanking({int type = 0, int counts = 20, int pages = 1, int range = 1}) =>
+  Future<Object?> photoRanking({int type = 1, int counts = 20, int pages = 1, int range = 1}) =>
       _get(DomainType.apiData, Endpoints.photoRanking,
           query: {'type': type, 'counts': counts, 'pages': pages, 'range': range});
 
-  Future<Object?> photoRecommend({int type = 0, int counts = 20, int pages = 1}) =>
+  Future<Object?> photoRecommend({int type = 1, int counts = 20, int pages = 1}) =>
       _get(DomainType.apiData, Endpoints.photoRecommend,
           query: {'type': type, 'counts': counts, 'pages': pages});
 

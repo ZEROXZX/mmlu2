@@ -92,6 +92,16 @@ class StreamService {
     throw StateError('m3u8 拉取失败: $url ($last)');
   }
 
+  /// 把 m3u8 里的相对/协议相对地址补全为绝对 URL。
+  ///
+  /// AV 动漫的 `#EXT-X-KEY` URI 常为 `stream-encrypt1.mmlutech.xyz/...`（无 scheme），
+  /// 直接请求会报 `No host specified in URI`；分片亦可能为 `//host/...`。
+  static String _abs(String u) {
+    if (u.startsWith('http://') || u.startsWith('https://')) return u;
+    if (u.startsWith('//')) return 'https:$u';
+    return 'https://$u';
+  }
+
   /// 解析 m3u8 文本。
   static M3u8Info parseM3u8(String text) {
     String? keyUri;
@@ -101,13 +111,12 @@ class StreamService {
       line = line.trim();
       if (line.startsWith('#EXT-X-KEY')) {
         final m = RegExp('URI="([^"]+)"').firstMatch(line);
-        keyUri = m?.group(1);
+        final raw = m?.group(1);
+        if (raw != null && raw.isNotEmpty) keyUri = _abs(raw);
         final ivm = RegExp('IV=0x([0-9A-Fa-f]+)').firstMatch(line);
         if (ivm != null) iv = MmluCrypto.hexDecode(ivm.group(1)!);
-      } else if (line.startsWith('http')) {
-        segs.add(line);
       } else if (line.isNotEmpty && !line.startsWith('#')) {
-        segs.add('https://$line');
+        segs.add(_abs(line));
       }
     }
     return M3u8Info(keyUri: keyUri, iv: iv, segments: segs);
