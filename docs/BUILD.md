@@ -1,7 +1,7 @@
-# mmlu_client — Android 打包教程（实测版）
+# mmlu_client — Android / Windows 打包教程（实测版）
 
-> 目标：把本源码打成可安装 APK。
-> 源码状态：`flutter analyze` = 0 issues，`flutter test` = 43/43 通过；
+> 目标：把本源码打成可安装 APK（Android）或可执行 exe（Windows）。
+> 源码状态：`flutter analyze` = 0 issues，`flutter test` = 85/85 通过；
 > 本包源码在 **aarch64 沙箱**内未能跑完最后一步（AAPT2 架构问题，见 §6），
 > 在 **x86_64 主机**上按本教程可直接完成打包。
 
@@ -101,7 +101,7 @@ export PUB_HOSTED_URL=https://pub.flutter-io.cn
 ```bash
 flutter pub get
 flutter analyze           # 应输出 "No issues found"
-flutter test              # 应 43/43 All tests passed
+flutter test              # 应 85/85 All tests passed
 
 flutter build apk --debug          # 快速验证
 flutter build apk --release        # 正式包
@@ -115,11 +115,45 @@ flutter build apk --release --target-platform=android-arm64
 
 首次构建耗时较长（下 Gradle + AGP + Kotlin + NDK，约 5–20 分钟）。
 
-> **关于 `flutter test` 的 43/43**：`flutter create` 会顺手生成一个默认的
+> **关于 `flutter test` 的 85/85**：`flutter create` 会顺手生成一个默认的
 > `test/widget_test.dart`（counter smoke test，引用 `MyApp`），它和我们项目的
 > `main.dart`（类名是 `MmluApp`）对不上，**会让 `flutter test` 编译失败**。
 > 本包**已删除**该文件。若你重新跑过 `flutter create` 又生成了它，删掉即可；
 > 它**不影响 `flutter build apk`**（`test/` 不进 APK）。
+
+### 4b. Windows 构建（本包已补全 `windows/` 脚手架）
+
+源码已含完整 `windows/`（`flutter create --platforms=windows` 生成，含
+`runner/main.cpp`、`flutter_window.*`、`win32_window.*`、`Runner.rc`、
+`CMakeLists.txt` 等 19 个文件）。在 **Windows 主机**上：
+
+```powershell
+# 前置：安装 Visual Studio 2022（勾选「使用 C++ 的桌面开发」+ CMake）+ Flutter SDK
+flutter doctor            # 确认 [√] Visual Studio - develop Windows desktop apps
+flutter pub get
+flutter build windows --release
+# 产物：
+#   build\windows\x64\runner\Release\mmlu_client.exe
+#   同目录下 data\（Flutter AOT/资源）、*.dll
+```
+
+分发：把整个 `build\windows\x64\runner\Release\` 目录压缩给用户即可（绿色免装）。
+
+要点：
+- **FFMPEG**：`Mp4Converter` 在 Windows 上走 `ffmpeg`（PATH 里找）或
+  `ffmpegPath`。需要转码（下载 mp4 播放）时把 `ffmpeg.exe` 放进 `Release\`
+  同目录或加入 PATH；不放也不影响浏览/播放（HLS 走本地代理，不依赖 ffmpeg）。
+- **权限**：`PermissionGate` 的存储/通知申请是 Android 专用
+  （走 MethodChannel `mmlu/native`）；`permission_gate.dart` 已用
+  `NativeBridge.isAndroid` 分支，**非 Android 直接放行**，不会卡授权页。
+- **插件**：`jni` 是 FFI 插件（`path_provider_android` 传递依赖），Windows
+  侧只有空壳，构建正常。
+- **播放器限制**：`player_page.dart` 用的是 `video_player` 插件，它**没有
+  Windows 实现**——所以 Windows 包可以浏览/搜索/下载/看图片与小说，但
+  **视频播放页在 Windows 上跑不起来**（属已知限制，不影响构建）。要支持
+  Windows 播放需换 `media_kit` / `windows_media_kit` 之类，属后续工作。
+- **网络**：`network_security_config.xml` 仅 Android；Windows 明文 HTTP 天然
+  放行，本地代理 `127.0.0.1:port` 可直接用。
 
 ---
 
@@ -614,13 +648,14 @@ mmlu_client/
 │   │   ├── stream_service.dart     # 分片拉取+解密+断点续传
 │   │   └── download_service.dart   # FFmpeg 转码 / 产物目录
 │   └── ui/pages/          # 首页/详情/播放器/阅读器/下载/历史/搜索/账号…
-├── test/                   # 46 例单元测试
+├── test/                   # 85 例单元/Widget 测试
 ├── docs/
 │   ├── PROTOCOL.md         # 完整协议逆向（鉴权/取流/解密/写操作/14 密钥）
 │   ├── REQUIREMENTS.md     # 需求清单 + 实现进度
 │   └── BUILD.md            # 本文
 ├── tools/mmlu_api.py       # 协议 Python 参考实现 + CLI（登录/下载/解密）
-├── android/                # 打包配置（已配镜像，见 §3）
+├── android/                # Android 打包配置（已配镜像，见 §3）
+├── windows/                # Windows 打包配置（见 §4b）
 └── pubspec.yaml
 ```
 
