@@ -535,6 +535,12 @@ fix14 后再次全库走查发现的遗留问题：
 | 动漫类首页和分类都不能刷新新的列表 | `PaginatedContentList` 判断 `hasMore` 时用「items.isEmpty→停；<pageSize→停；>=pageSize→续」。但若接口返回整页且全部条目被 `_seen` 去重，`_items` 实际没新增却还认为「还有下一页」？并非根因。更符合实用：**只要返回的条数 >= pageSize 就认为可能还有下一页**（即使全去重也允许试探下一页），返回 < pageSize 则到达末页。 | 将 `hasMore` 逻辑改为：`items.length < pageSize` → `false`，否则 `true`（去除 `items.isEmpty` 导致的多余判断）。 |
 | 图集类小部分预览图不显示 | 滚动复用导致封面偶尔解码异常或重载。 | 先保留现状（已回滚 `AutomaticKeepAlive`、`Image.memory` 增强），观察真机效果。必要时再加 `AutomaticKeepAlive` 或 `ErrorWidget`。 |
 
+## 6v. 图集预览图偶尔不显示（容错）【fix23】
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 图集类小部分预览图不显示 | 滚动回收/解码异常导致 `Image.memory` 偶发失败，之前移除了容错处理。 | 恢复 `CoverImage` 的 `Image.memory` 增加 `errorBuilder`（失败时显示中性占位）和 `gaplessPlayback`；`PaginatedContentList` 恢复 `AutomaticKeepAlive` 包裹，减少滚动重建导致的重载。 |
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |

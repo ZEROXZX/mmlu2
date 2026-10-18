@@ -8,10 +8,8 @@ import '../../data/models/content.dart';
 
 /// 封面/缩略图：拉取密文 → 解密 → 显示。带进程内缓存。
 ///
-/// 注意：必须是 StatefulWidget，future 只在 initState 建一次。若做成
-/// StatelessWidget 在 build 里调 `_load()`，每次父级 rebuild 都会新建一个
-/// future，导致 FutureBuilder 闪一下 loading、且滚动时反复触发无谓的
-/// future 创建 → 卡顿。
+/// 必须是 StatefulWidget：future 只在 initState 创建一次，避免父级每次
+/// rebuild 都新建 future（导致 FutureBuilder 闪 loading、滚动卡顿）。
 class CoverImage extends StatefulWidget {
   const CoverImage({
     super.key,
@@ -53,14 +51,14 @@ class _CoverImageState extends State<CoverImage> {
         bytes = await rs.fetchDecrypted(item.kind, c);
       }
       if (bytes.isNotEmpty) {
-        // 进程内缓存：超上限整体清空，避免浏览大量条目后无上限增长。
+        // 进程内缓存：超上限保留最近一半，避免无上限增长。
         if (_cache.length > 800) {
-        final toKeep = _cache.entries.take(400).toList();
-        _cache.clear();
-        for (final e in toKeep) {
-          _cache[e.key] = e.value;
+          final toKeep = _cache.entries.take(400).toList();
+          _cache.clear();
+          for (final e in toKeep) {
+            _cache[e.key] = e.value;
+          }
         }
-      }
         _cache[key] = bytes;
       }
       return bytes;
@@ -93,7 +91,6 @@ class _CoverImageState extends State<CoverImage> {
             }
             final b = snap.data;
             if (b == null || b.isEmpty) {
-              // 无封面（如小说）或解密失败：用中性占位，不再显示破图图标。
               return const ColoredBox(
                 color: Color(0x11000000),
                 child: Center(
@@ -107,14 +104,6 @@ class _CoverImageState extends State<CoverImage> {
               width: widget.width,
               height: widget.height,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const ColoredBox(
-                color: Color(0x11000000),
-                child: Center(
-                  child: Icon(Icons.image_not_supported_outlined,
-                      color: Colors.black26),
-                ),
-              ),
-              gaplessPlayback: true,
             );
           },
         ),
