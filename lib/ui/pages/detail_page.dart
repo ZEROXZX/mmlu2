@@ -702,8 +702,27 @@ class _BodyState extends State<_Body> {
       return;
     }
     if (!mounted) return;
+    final disp = ContentItem(
+          kind: d.item.kind,
+          id: d.item.id,
+          title: _title(d.item),
+          tag: d.item.tag,
+          tags: d.item.tags,
+          desc: d.item.desc,
+          cover: d.item.cover,
+          thumbPath: d.item.thumbPath,
+          avkey: d.item.avkey,
+          source: d.item.source,
+          series: d.item.series,
+          season: d.item.season,
+          ep: d.item.ep,
+          duration: d.item.duration,
+          viewCount: d.item.viewCount,
+          media: d.item.media,
+          raw: d.item.raw,
+        );
     context.read<DownloadManager>().addImages(
-          item: d.item,
+          item: disp,
           pages: pages,
           scheme: scheme,
           scope: scope,

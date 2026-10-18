@@ -505,6 +505,15 @@ fix14 后再次全库走查发现的遗留问题：
 |---|---|---|
 | 下载图集/漫画后，下载页历史记录的标题与实际文件名（`_safeName(title,id)[_scope].zip`）不一致 | 历史记录直接用 `r.title`（作品原始标题）展示 | `downloads_page.dart`：历史条目标题改为 `r.filePath` 取文件名去扩展名，失败回退 `r.title`。 |
 
+## 6r. 图集/漫画下载文件名与显示名一致【fix19】
+
+图集/漫画打包 zip 文件名由 `DownloadTask._runImages` 用 `_safeName(t.title, t.id) + suffix` 生成。
+详情页调用 `addImages` 时传入的 `item` 若 `title` 为空或为回退值，导致任务标题与实际文件名不一致。
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 下载图集时压缩包文件名与图集名不一致 | 详情页传入 `d.item`，`d.item.title` 可能为空（图集 `photoRead` 只给页表）。任务存储的 `t.title` 成了回退值，zip 名与显示标题不一致。 | 详情页 `addImages` 调用前用 `_title(d.item)` 构造临时 `ContentItem`（复制所有字段）传入，确保任务标题 = 显示标题，从而 zip 文件名与预期一致。 |
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
@@ -560,11 +569,7 @@ fix14 后再次全库走查发现的遗留问题：
 6. 离线：下载完成后再次进入播放页应自动播本地文件
 7. 小说：单章下载 + 勾选多章下载；图集/漫画打包下载
 
-> **FFmpeg（R1.5 转 MP4）**：`Mp4Converter` 默认调用 PATH 里的 `ffmpeg`
-> （`lib/data/service/download_service.dart`）。Android 上需二选一：
-> - 随包带 ffmpeg 可执行（放进 `android/app/src/main/assets/`，启动时解压到
->   `context.filesDir`，再 `Mp4Converter(ffmpegPath: <该路径>)`）；
-> - 或改用 `ffmpeg_kit_flutter` 插件替换 `Mp4Converter`。
+> **FFmpeg（R1.5 转 MP4）**：`Mp4Converter` 优先用随包复制到 `filesDir` 的可执行 `ffmpeg`（来源 `android/app/src/main/assets/arm64-v8a/ffmpeg`，由 `MainActivity.copyFfmpegToFiles()` 在启动时复制并 `chmod +x`），也会尝试 `ffmpegPath`、系统 `ffmpeg`。包内目前仅保留 **assets** 版本（去掉冗余的 `jniLibs` 副本，减小源码 zip 体积）。若目标机型非 arm64-v8a 须按机型替换对应二进制。
 > 否则 TS→MP4 静默失败（下载分片仍保留，不影响其它功能）。
 
 ---
