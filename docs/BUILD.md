@@ -521,6 +521,13 @@ fix14 后再次全库走查发现的遗留问题：
 | 首页及分类的动画列表往下滑几下就不自动刷新了 | `PaginatedContentList` 判断 `hasMore` 时要求「本页返回 >= pageSize 且本页新增 > 0」（`_items.length > before`）。若接口返回满页但全部条目已在 `_seen` 去重（极少见）或逻辑误判，直接置 `hasMore=false`，导致后续滚动不再触发加载。 | 改为：`items.isEmpty`→false；`items.length < pageSize`→false；否则 true（去重不再误判停止分页）。移除未使用的 `before` 变量。 |
 | 图集往下滑几下，有部分预览图片不显示 | GridView 滚动出视口后子项可能被回收重建；`CoverImage` 改成 Stateful 后 `Future` 只建一次可减少闪烁，但仍可能因重建触发重新加载。 | 在 `PaginatedContentList` 的列表项外包 `AutomaticKeepAlive`（保持子项状态），降低重建导致的封面重载概率。 |
 
+## 6t. 首页/分类封面全部灰色 & 部分图集预览不显示【fix21】
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 首页及分类的所有预览图全部加载失败，全是灰色 | 排查显示逻辑未发现明显解密错误（密钥常量、scheme 自动识别均正常）。可能是网络拉取成功但图片解密后字节不完整/格式异常，或 Flutter `Image.memory` 解码失败导致直接显示空白。 | `CoverImage` 的 `Image.memory` 增加 `errorBuilder` 与 `gaplessPlayback`，解码失败时显示中性占位而不是灰块空白，避免整列被误判为加载失败。 |
+| 图集往下滑几下，有部分预览图片不显示 | 滚动回收重建导致偶发解码异常或重载闪烁 | 配合 §6s 的 `AutomaticKeepAlive`，并增加 `errorBuilder` 提升容错性。 |
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
