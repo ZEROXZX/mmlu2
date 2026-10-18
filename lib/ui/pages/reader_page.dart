@@ -153,7 +153,13 @@ class _PageImageState extends State<_PageImage> {
     final b = await widget.service.fetchDecrypted(widget.kind, widget.ref);
     if (b.isNotEmpty) {
       // 限制缓存规模，避免翻长漫时无上限增长。
-      if (_ReaderPageState._cache.length > 200) _ReaderPageState._cache.clear();
+      if (_ReaderPageState._cache.length > 400) {
+        final toKeep = _ReaderPageState._cache.entries.take(200).toList();
+        _ReaderPageState._cache.clear();
+        for (final e in toKeep) {
+          _ReaderPageState._cache[e.key] = e.value;
+        }
+      }
       _ReaderPageState._cache[key] = b;
     }
     return b;

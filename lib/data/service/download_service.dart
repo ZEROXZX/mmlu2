@@ -17,22 +17,40 @@ class Mp4Converter {
   /// 将 TS 合并为 MP4。`-c copy` 直接封装（无需重编码）；失败则回退重编码。
   Future<bool> tsToMp4(String tsPath, String mp4Path) async {
     try {
-      final exe = ffmpegPath;
-      final r = await Process.run(exe, [
-        '-y',
-        '-i', tsPath,
-        '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        mp4Path,
-      ]);
-      if (r.exitCode == 0 && File(mp4Path).existsSync()) return true;
-      // 退化：重编码
-      final r2 = await Process.run(exe, [
-        '-y',
-        '-i', tsPath,
-        mp4Path,
-      ]);
-      return r2.exitCode == 0 && File(mp4Path).existsSync();
+      // Try multiple common locations and commands (bundle jniLibs -> lib/..., or system)
+      final candidates = <String>[
+        '/data/data/com.example.mmlu_client/files/ffmpeg',
+        ffmpegPath,
+        'ffmpeg',
+        '/system/bin/ffmpeg',
+      ];
+      for (final exe in candidates) {
+        try {
+          final r = await Process.run(exe, [
+            '-y',
+            '-i', tsPath,
+            '-c', 'copy',
+            '-bsf:a', 'aac_adtstoasc',
+            '-movflags', '+faststart',
+            mp4Path,
+          ]);
+          if (r.exitCode == 0 && File(mp4Path).existsSync()) return true;
+          final r2 = await Process.run(exe, [
+            '-y',
+            '-i', tsPath,
+            '-avoid_negative_ts', 'make_zero',
+            '-map', '0:v:0',
+            '-map', '0:a:0?',
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-preset', 'veryfast',
+            '-movflags', '+faststart',
+            mp4Path,
+          ]);
+          if (r2.exitCode == 0 && File(mp4Path).existsSync()) return true;
+        } catch (_) {}
+      }
+      return false;
     } catch (_) {
       return false;
     }

@@ -41,7 +41,13 @@ class CoverImage extends StatelessWidget {
       }
       if (bytes.isNotEmpty) {
         // 进程内缓存：超上限整体清空，避免浏览大量条目后无上限增长。
-        if (_cache.length > 500) _cache.clear();
+        if (_cache.length > 800) {
+        final toKeep = _cache.entries.take(400).toList();
+        _cache.clear();
+        for (final e in toKeep) {
+          _cache[e.key] = e.value;
+        }
+      }
         _cache[key] = bytes;
       }
       return bytes;
