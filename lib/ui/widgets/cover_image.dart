@@ -102,7 +102,20 @@ class _CoverImageState extends State<CoverImage> {
                 ),
               );
             }
-            return Image.memory(b, width: widget.width, height: widget.height, fit: BoxFit.cover);
+            return Image.memory(
+              b,
+              width: widget.width,
+              height: widget.height,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const ColoredBox(
+                color: Color(0x11000000),
+                child: Center(
+                  child: Icon(Icons.image_not_supported_outlined,
+                      color: Colors.black26),
+                ),
+              ),
+              gaplessPlayback: true,
+            );
           },
         ),
       ),

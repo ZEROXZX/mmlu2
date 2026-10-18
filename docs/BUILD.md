@@ -528,6 +528,13 @@ fix14 后再次全库走查发现的遗留问题：
 | 首页及分类的所有预览图全部加载失败，全是灰色 | 排查显示逻辑未发现明显解密错误（密钥常量、scheme 自动识别均正常）。可能是网络拉取成功但图片解密后字节不完整/格式异常，或 Flutter `Image.memory` 解码失败导致直接显示空白。 | `CoverImage` 的 `Image.memory` 增加 `errorBuilder` 与 `gaplessPlayback`，解码失败时显示中性占位而不是灰块空白，避免整列被误判为加载失败。 |
 | 图集往下滑几下，有部分预览图片不显示 | 滚动回收重建导致偶发解码异常或重载闪烁 | 配合 §6s 的 `AutomaticKeepAlive`，并增加 `errorBuilder` 提升容错性。 |
 
+## 6u. 分页「到底不刷新」& 图集预览小部分不显示【fix22】
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 动漫类首页和分类都不能刷新新的列表 | `PaginatedContentList` 判断 `hasMore` 时用「items.isEmpty→停；<pageSize→停；>=pageSize→续」。但若接口返回整页且全部条目被 `_seen` 去重，`_items` 实际没新增却还认为「还有下一页」？并非根因。更符合实用：**只要返回的条数 >= pageSize 就认为可能还有下一页**（即使全去重也允许试探下一页），返回 < pageSize 则到达末页。 | 将 `hasMore` 逻辑改为：`items.length < pageSize` → `false`，否则 `true`（去除 `items.isEmpty` 导致的多余判断）。 |
+| 图集类小部分预览图不显示 | 滚动复用导致封面偶尔解码异常或重载。 | 先保留现状（已回滚 `AutomaticKeepAlive`、`Image.memory` 增强），观察真机效果。必要时再加 `AutomaticKeepAlive` 或 `ErrorWidget`。 |
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
