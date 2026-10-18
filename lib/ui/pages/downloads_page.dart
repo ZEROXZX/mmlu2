@@ -285,7 +285,19 @@ class _DownloadsPageState extends State<DownloadsPage> {
       title: Row(
         children: [
           Expanded(
-            child: Text(r.title,
+            child: Text(
+                (() {
+                  try {
+                    final p = r.filePath;
+                    if (p.isEmpty) return r.title;
+                    final base = p.split('/').last;
+                    if (base.isEmpty) return r.title;
+                    final name = base.replaceAll(RegExp(r'\.\w+$'), '');
+                    return name.isEmpty ? r.title : name;
+                  } catch (_) {
+                    return r.title;
+                  }
+                })(),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           if (stale)
