@@ -79,14 +79,19 @@ class _PaginatedContentListState extends State<PaginatedContentList> {
     try {
       final items = await widget.loader(next);
       if (!mounted) return;
-      final before = _items.length;
       setState(() {
         _page = next;
         for (final it in items) {
           if (_seen.add('${it.kind.tag}:${it.id}:${it.source}')) _items.add(it);
         }
-        // 本页不足一页或整页无新增 → 到底。
-        _hasMore = items.length >= widget.pageSize && _items.length > before;
+        // 本页为空 → 到底；< 一页 → 到底；>= 一页 → 继续（去重不导致误判停止）
+        if (items.isEmpty) {
+          _hasMore = false;
+        } else if (items.length < widget.pageSize) {
+          _hasMore = false;
+        } else {
+          _hasMore = true;
+        }
       });
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -163,7 +168,7 @@ class _PaginatedContentListState extends State<PaginatedContentList> {
             return const SizedBox.shrink();
           }
           final it = _items[i];
-          return ContentTile(item: it, onTap: () => widget.onTap(it));
+          return AutomaticKeepAlive(child: ContentTile(item: it, onTap: () => widget.onTap(it)));
         },
       ),
     );

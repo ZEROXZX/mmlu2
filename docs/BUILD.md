@@ -514,6 +514,13 @@ fix14 后再次全库走查发现的遗留问题：
 |---|---|---|
 | 下载图集时压缩包文件名与图集名不一致 | 详情页传入 `d.item`，`d.item.title` 可能为空（图集 `photoRead` 只给页表）。任务存储的 `t.title` 成了回退值，zip 名与显示标题不一致。 | 详情页 `addImages` 调用前用 `_title(d.item)` 构造临时 `ContentItem`（复制所有字段）传入，确保任务标题 = 显示标题，从而 zip 文件名与预期一致。 |
 
+## 6s. 滚动到底加载误判 / 图集封面偶尔不显示【fix20】
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 首页及分类的动画列表往下滑几下就不自动刷新了 | `PaginatedContentList` 判断 `hasMore` 时要求「本页返回 >= pageSize 且本页新增 > 0」（`_items.length > before`）。若接口返回满页但全部条目已在 `_seen` 去重（极少见）或逻辑误判，直接置 `hasMore=false`，导致后续滚动不再触发加载。 | 改为：`items.isEmpty`→false；`items.length < pageSize`→false；否则 true（去重不再误判停止分页）。移除未使用的 `before` 变量。 |
+| 图集往下滑几下，有部分预览图片不显示 | GridView 滚动出视口后子项可能被回收重建；`CoverImage` 改成 Stateful 后 `Future` 只建一次可减少闪烁，但仍可能因重建触发重新加载。 | 在 `PaginatedContentList` 的列表项外包 `AutomaticKeepAlive`（保持子项状态），降低重建导致的封面重载概率。 |
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
