@@ -165,7 +165,7 @@ class _PaginatedContentListState extends State<PaginatedContentList> {
             return const SizedBox.shrink();
           }
           final it = _items[i];
-          return AutomaticKeepAlive(child: ContentTile(item: it, onTap: () => widget.onTap(it)));
+          return ContentTile(item: it, onTap: () => widget.onTap(it));
         },
       ),
     );
