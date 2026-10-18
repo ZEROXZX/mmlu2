@@ -16,6 +16,8 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 /**
  * 原生桥：运行时权限 / 公共目录 / 媒体扫描(入相册) / 下载完成通知。
@@ -33,6 +35,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        copyFfmpegToFiles()
         createNotificationChannel()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result -> handle(call, result) }
@@ -196,6 +199,21 @@ class MainActivity : FlutterActivity() {
             val nm = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
             nm?.notify(id, n)
         } catch (_: Exception) {
+        }
+    }
+
+    private fun copyFfmpegToFiles() {
+        try {
+            val dest = File(filesDir, "ffmpeg")
+            if (dest.exists() && dest.canExecute()) return
+            assets.open("arm64-v8a/ffmpeg").use { input ->
+                FileOutputStream(dest).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            dest.setExecutable(true)
+        } catch (e: IOException) {
+            // ignore
         }
     }
 }

@@ -482,6 +482,20 @@ fix14 后再次全库走查发现的遗留问题：
 
 > 契约：`stream_segment_test.dart`（`fetchSegment`：key 为 null/空 → 原样返回；有 key → AES-128-CBC 解密）。
 
+
+## 6p. 第三轮走查（播放/流解析/小优化）【fix17 补充】
+
+第三轮「再检测一遍」后记录：
+
+| 现象 / 隐患 | 根因 | 处理 |
+|---|---|---|
+| 播放报 `ExoPlaybackException: Source error`（直流本地代理 `http://127.0.0.1:<port>/play.m3u8`） | Android 9+ 禁止明文 HTTP，media3/ExoPlayer 未放行 127.0.0.1 | `AndroidManifest.xml` 加 `android:networkSecurityConfig="@xml/network_security_config"`；`res/xml/network_security_config.xml` 放行 `127.0.0.1`、`localhost`。已修复。 |
+| `parseM3u8` 未处理 `#EXT-X-MAP` 与 `#EXT-X-BYTERANGE` | 部分 fMP4/分片按字节范围切分的 m3u8 不常见；当前业务以 TS 分片为主 | **保留现状**（不修改实现）。如真机遇到此类清单导致首帧/分片异常再按需补全（保持向后兼容）。 |
+| `ResourceService.fetchAndDecryptHostTxt()` 每次 `new Dio()` | 无连接复用必要，微优化 | 可选：改用静态 `_dioHost` 重用连接池。行为不变，未修改。 |
+| `CoverImage` 在 ScrollView rebuild 时反复创建 future（Stateless 版） | 父级 rebuild 触发 `_load()` 新建 future | 改为 **StatefulWidget**：`_future` 只在 `initState` 创建，避免滚动闪烁。已修复。 |
+
+> 注：`probe_stream.py` 因强制登出/缺 token 暂不可用；`diag2.py` 可自行取 guest token 用于 API 实测。
+
 ## 7. 常见错误速查（均为沙箱实测）
 
 | 现象 | 原因 | 处置 |
