@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-      # 关闭 Gradle 文件监听，消除 "Already watching path" 噪音
-      GRADLE_OPTS: "-Dorg.gradle.vfs.watch=false"
+      # 关闭文件监控 + Gradle网络重试，解决国外CI拉取依赖超时
+      GRADLE_OPTS: "-Dorg.gradle.vfs.watch=false -Dorg.gradle.internal.network.retry.max-attempts=5 -Dorg.gradle.internal.network.retry.delay=3000 -Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000"
     steps:
       - uses: actions/checkout@v4
 
@@ -34,11 +34,20 @@ jobs:
           channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      - name: Flutter pub get
-        run: flutter pub get
+      # Gradle缓存，关键：减少重复下载依赖包，降低网络失败概率
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*','**/gradle-wrapper.properties') }}
 
       - name: Flutter clean
         run: flutter clean
+
+      - name: Flutter pub get
+        run: flutter pub get
 
       - name: Flutter analyze
         run: flutter analyze
@@ -47,8 +56,6 @@ jobs:
         run: flutter test
 
       - name: Prepare signing keystore
-        # 只要配了 KEYSTORE_BASE64 就签名（push / tag 都签）；
-        # 没配 secret 则跳过，输出未签名包，CI 不崩
         if: env.KEYSTORE_BASE64 != ''
         run: |
           echo "${{ env.KEYSTORE_BASE64 }}" | base64 -d > android/app/mmlu.jks
@@ -60,8 +67,6 @@ jobs:
             > android/app/key.properties
 
       - name: Build Android Release APK
-        # 加 --verbose 是为了拿到 ffmpeg_kit_flutter 真正的报错；
-        # 定位问题后可去掉 --verbose 减少日志量
         run: flutter build apk --release --target-platform=android-arm64 --verbose
 
       - name: Upload Android APK Artifact
@@ -81,11 +86,11 @@ jobs:
           channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      - name: Flutter pub get
-        run: flutter pub get
-
       - name: Flutter clean
         run: flutter clean
+
+      - name: Flutter pub get
+        run: flutter pub get
 
       - name: Build Windows Release
         run: flutter build windows --release
@@ -115,4 +120,3 @@ jobs:
           files: |
             android-apk/*.apk
             windows-build/*.zip
-
