@@ -8,6 +8,7 @@ import '../domain/endpoints.dart';
 import 'api_exception.dart';
 import 'decrypt_interceptor.dart';
 import 'header_interceptor.dart';
+import 'http_factory.dart';
 import 'sign_interceptor.dart';
 
 /// 鉴权拦截器：为需要鉴权的请求注入 `Authorization: Bearer <token>`。
@@ -71,7 +72,7 @@ class ApiErrorInterceptor extends Interceptor {
         type: err.type,
         error: ApiException(
           res?.statusCode ?? -1,
-          _message(res) ?? err.message ?? 'network error',
+          _message(res) ?? _networkMessage(err),
           body: res?.data,
         ),
         message: err.message,
@@ -119,6 +120,8 @@ class ApiClient {
       DecryptInterceptor(this.apiKey),
       ApiErrorInterceptor(this.apiKey),
     ]);
+    // 桌面端 Dart 不读系统代理，统一在此挂代理/证书配置。
+    HttpFactory.configure(dio);
   }
 
   final TokenStore tokenStore;
@@ -186,7 +189,7 @@ class ApiClient {
     } on DioException catch (e) {
       throw ApiException(
         e.response?.statusCode ?? -1,
-        '游客注册失败: ${e.message}',
+        '游客注册失败: ${_networkMessage(e)}',
         body: e.response?.data,
       );
     }
@@ -194,10 +197,12 @@ class ApiClient {
 
   /// 解析并按需解密 host.txt，返回明文 JSON 字符串。
   Future<String> fetchAndDecryptHostTxt() async {
+    final plain = Dio();
+    HttpFactory.configure(plain);
     DioException? last;
     for (final url in MmluKeys.hostTxtUrls) {
       try {
-        final res = await Dio().get<String>(
+        final res = await plain.get<String>(
           url,
           options: Options(responseType: ResponseType.plain),
         );
@@ -212,6 +217,35 @@ class ApiClient {
         last = e;
       }
     }
-    throw ApiException(-1, 'host.txt 拉取失败: ${last?.message}');
+    throw ApiException(
+      -1,
+      'host.txt 拉取失败: ${last == null ? '未知' : _networkMessage(last)}',
+    );
   }
 }
+
+/// 无响应（DNS/连接/TLS/超时）时给出可定位的中文原因。
+String _networkMessage(DioException err) {
+    final detail = _flattenError(err.error ?? err.message);
+    final base = switch (err.type) {
+      DioExceptionType.connectionTimeout => '连接超时',
+      DioExceptionType.sendTimeout => '发送超时',
+      DioExceptionType.receiveTimeout => '接收超时',
+      DioExceptionType.badCertificate => '证书校验失败',
+      DioExceptionType.connectionError => '网络连接失败',
+      DioExceptionType.cancel => '请求已取消',
+      _ => 'network error',
+    };
+    final extra = <String>[
+      HttpFactory.proxy == null ? '' : HttpFactory.describe(),
+      if (detail != null && detail.isNotEmpty) detail,
+    ].where((e) => e.isNotEmpty).join('；');
+    return extra.isEmpty ? base : '$base（$extra）';
+  }
+
+String? _flattenError(Object? e) {
+    if (e == null) return null;
+    final s = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (s.isEmpty) return null;
+    return s.length > 200 ? '${s.substring(0, 200)}…' : s;
+  }

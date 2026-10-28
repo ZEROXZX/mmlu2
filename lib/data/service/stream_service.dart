@@ -8,6 +8,7 @@ import '../../core/auth/token_store.dart';
 import '../../core/constants/mmlu_keys.dart';
 import '../../core/crypto/mmlu_crypto.dart';
 import '../../core/domain/domain_store.dart';
+import '../../core/network/http_factory.dart';
 
 /// HLS 播放清单解析结果。
 class M3u8Info {
@@ -41,7 +42,9 @@ class StreamService {
               receiveTimeout: const Duration(seconds: 30),
               responseType: ResponseType.plain,
               headers: {'User-Agent': 'okhttp/4.9.0'},
-            ));
+            )) {
+    if (dio == null) HttpFactory.configure(_dio);
+  }
 
   final DomainStore domains;
   final TokenStore tokenStore;

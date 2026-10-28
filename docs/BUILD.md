@@ -1,7 +1,7 @@
 # mmlu_client — Android / Windows 打包教程（实测版）
 
 > 目标：把本源码打成可安装 APK（Android）或可执行 exe（Windows）。
-> 源码状态：`flutter analyze` = 0 issues，`flutter test` = 85/85 通过；
+> 源码状态：`flutter analyze` = 0 issues，`flutter test` = 89/89 通过；
 > 本包源码在 **aarch64 沙箱**内未能跑完最后一步（AAPT2 架构问题，见 §6），
 > 在 **x86_64 主机**上按本教程可直接完成打包。
 
@@ -101,7 +101,7 @@ export PUB_HOSTED_URL=https://pub.flutter-io.cn
 ```bash
 flutter pub get
 flutter analyze           # 应输出 "No issues found"
-flutter test              # 应 85/85 All tests passed
+flutter test              # 应 89/89 All tests passed
 
 flutter build apk --debug          # 快速验证
 flutter build apk --release        # 正式包
@@ -115,7 +115,7 @@ flutter build apk --release --target-platform=android-arm64
 
 首次构建耗时较长（下 Gradle + AGP + Kotlin + NDK，约 5–20 分钟）。
 
-> **关于 `flutter test` 的 85/85**：`flutter create` 会顺手生成一个默认的
+> **关于 `flutter test` 的 89/89**：`flutter create` 会顺手生成一个默认的
 > `test/widget_test.dart`（counter smoke test，引用 `MyApp`），它和我们项目的
 > `main.dart`（类名是 `MmluApp`）对不上，**会让 `flutter test` 编译失败**。
 > 本包**已删除**该文件。若你重新跑过 `flutter create` 又生成了它，删掉即可；
@@ -152,8 +152,11 @@ flutter build windows --release
   Windows 实现**——所以 Windows 包可以浏览/搜索/下载/看图片与小说，但
   **视频播放页在 Windows 上跑不起来**（属已知限制，不影响构建）。要支持
   Windows 播放需换 `media_kit` / `windows_media_kit` 之类，属后续工作。
-- **网络**：`network_security_config.xml` 仅 Android；Windows 明文 HTTP 天然
-  放行，本地代理 `127.0.0.1:port` 可直接用。
+- **网络 / 代理**：`network_security_config.xml` 仅 Android；Windows 明文
+  HTTP 天然放行。**Dart 不读 Windows 系统代理**，若你的网络必须走代理
+  （Clash/v2rayN 等），请在应用内「账号 → 网络设置」填
+  `http://127.0.0.1:7890`；也可用 `--dart-define=MMLU_PROXY=...` 或环境变量
+  `HTTPS_PROXY`。详见 §6x。
 
 ---
 
@@ -573,7 +576,26 @@ fix14 后再次全库走查发现的遗留问题：
 
 | 现象 | 根因 | 修复 |
 |---|---|---|
-| 图集类小部分预览图不显示 | 滚动回收/解码异常导致 `Image.memory` 偶发失败，之前移除了容错处理。 | 恢复 `CoverImage` 的 `Image.memory` 增加 `errorBuilder`（失败时显示中性占位）和 `gaplessPlayback`；`PaginatedContentList` 恢复 `AutomaticKeepAlive` 包裹，减少滚动重建导致的重载。 |
+| 图集类小部分预览图不显示 | 解码偶发失败（数据截断等）。 | `CoverImage` 的 `Image.memory` 加 `errorBuilder` + `gaplessPlayback`，失败显示中性占位，不影响其它图。 |
+
+## 6w. ★ 首页/分类全部封面变灰 + 点击无反应【fix24，根因确认】
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 首页/分类**所有**预览图全灰、点 tile 不跳详情 | `PaginatedContentList` 的 grid item 里包了一层 `AutomaticKeepAlive`。`AutomaticKeepAlive` 的 `KeepAlive` 是 `ParentDataWidget`，必须直接位于 `SliverWithKeepAliveWidget`/`TwoDimensionalViewport` 之下；而 `GridView` 默认 `addRepaintBoundaries=true`，中间夹了 `RepaintBoundary`，触发断言 `Incorrect use of ParentDataWidget ... KeepAlive ... inside a RepaintBoundary`。布局异常 → 整块网格渲染失败（灰）且手势失效（点不动）。 | **移除该 `AutomaticKeepAlive`**。`GridView.builder`/`ListView.builder` 本身就默认 `addAutomaticKeepAlives: true`，无需手包。修复前用 widget test 复现：包 → tap 不触发 + 3 个异常；移除 → tap 正常。 |
+
+> 排查提示：`flutter test` 里跑一个「pump 列表 → tap 首格 → 断言 onTap 被调用」的 widget test，能直接抓出这类布局断言（本包开发期临时用例，提交前已删）。
+
+## 6x. ★ Windows 端打开即 `ApiException(-1): network error`【fix24】
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| Windows 版打开列表即报 `加载失败：ApiException(-1): network error` | `-1` 表示**没有拿到任何 HTTP 响应**（DNS/连接/TLS/超时）。Dart 的 `HttpClient` **不读取 Windows 系统代理**，走 Clash/v2rayN「系统代理」模式时应用侧仍是直连，连不上外网域。旧错误文案还把底层原因吞掉了（`err.message` 为空 → 只剩 `network error`）。 | ① 新增 `core/network/http_factory.dart` + `network_settings.dart`：统一的 `findProxy`/`badCertificateCallback`，可读设置页、`--dart-define=MMLU_PROXY=...`、`HTTPS_PROXY/ALL_PROXY` 环境变量；② 账号页新增「网络设置（代理 / 证书）」，填 `http://127.0.0.1:7890` 即时生效（含 `allow bad cert` 开关，MITM 代理时需要）；③ 错误文案改为带底层原因与出口（如 `网络连接失败（代理 http://127.0.0.1:7890；HandshakeException: ...）`）。 |
+
+常见对应关系（看新文案即可定位）：
+- `连接超时/网络连接失败（直连；SocketException: Failed host lookup ...）` → DNS 被污染/被墙，开代理或换 DNS。
+- `…（HandshakeException/ CERTIFICATE_VERIFY_FAILED …)` → 代理做了 MITM，打开「允许不安全证书」。
+- `…（代理 http://127.0.0.1:7890）` 仍失败 → 代理端口不对/未启动；Clash 用 `7890`（混合端口）。
 
 ## 7. 常见错误速查（均为沙箱实测）
 
@@ -648,7 +670,7 @@ mmlu_client/
 │   │   ├── stream_service.dart     # 分片拉取+解密+断点续传
 │   │   └── download_service.dart   # FFmpeg 转码 / 产物目录
 │   └── ui/pages/          # 首页/详情/播放器/阅读器/下载/历史/搜索/账号…
-├── test/                   # 85 例单元/Widget 测试
+├── test/                   # 89 例单元/Widget 测试
 ├── docs/
 │   ├── PROTOCOL.md         # 完整协议逆向（鉴权/取流/解密/写操作/14 密钥）
 │   ├── REQUIREMENTS.md     # 需求清单 + 实现进度

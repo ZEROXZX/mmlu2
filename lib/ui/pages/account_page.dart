@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
+import '../../core/network/http_factory.dart';
 import '../../data/models/user_info_response.dart';
 import '../widgets/async_view.dart';
 import 'history_page.dart';
@@ -17,6 +18,70 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   bool _busy = false;
+
+
+  Future<void> _openNetworkSettings() async {
+    final c = context.read<AppContainer>();
+    final proxyCtrl =
+        TextEditingController(text: c.networkSettings.proxy);
+    var badCert = c.networkSettings.allowBadCert;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('网络设置'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: proxyCtrl,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: '代理地址',
+                    hintText: 'http://127.0.0.1:7890',
+                    helperText: '留空 = 直连；桌面端需手动填代理（不读系统代理）',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('允许不安全证书'),
+                  subtitle: const Text('代理做 HTTPS 解密(MITM)时才需要'),
+                  value: badCert,
+                  onChanged: (v) => setLocal(() => badCert = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('保存')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    await c.networkSettings.save(proxy: proxyCtrl.text, allowBadCert: badCert);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已保存，立即生效（当前：${HttpFactory.describe()}）')),
+    );
+    setState(() {});
+  }
+
+  Widget _networkTile(AppContainer c) => ListTile(
+        leading: const Icon(Icons.wifi_tethering),
+        title: const Text('网络设置（代理 / 证书）'),
+        subtitle: Text('出口：${HttpFactory.describe()}'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _openNetworkSettings,
+      );
 
   Future<void> _openLogin() async {
     final ok = await Navigator.of(context).push<bool>(
@@ -60,11 +125,11 @@ class _AccountPageState extends State<AccountPage> {
     final c = context.read<AppContainer>();
     return Scaffold(
       appBar: AppBar(title: const Text('账号')),
-      body: c.tokenStore.isLoggedIn ? _loggedIn(c) : _guest(),
+      body: c.tokenStore.isLoggedIn ? _loggedIn(c) : _guest(c),
     );
   }
 
-  Widget _guest() => ListView(
+  Widget _guest(AppContainer c) => ListView(
         children: [
           const SizedBox(height: 40),
           const Icon(Icons.account_circle_outlined, size: 80, color: Colors.grey),
@@ -87,6 +152,7 @@ class _AccountPageState extends State<AccountPage> {
           ),
           const SizedBox(height: 24),
           const Divider(),
+          _networkTile(c),
           ListTile(
             leading: const Icon(Icons.history),
             title: const Text('观看历史'),
@@ -122,6 +188,7 @@ class _AccountPageState extends State<AccountPage> {
                   : Text('到期：${_fmtDate(info.levelExpiryAt!)}'),
             ),
             const Divider(),
+            _networkTile(c),
             ListTile(
               leading: const Icon(Icons.history),
               title: const Text('观看历史'),

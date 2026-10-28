@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/auth/token_store.dart';
 import '../core/domain/domain_store.dart';
 import '../core/network/api_client.dart';
+import '../core/network/network_settings.dart';
 import '../data/api/api_service.dart';
 import '../data/repo/app_repo.dart';
 import '../data/repo/content_repo.dart';
@@ -35,6 +36,7 @@ class AppContainer {
     required this.downloadManager,
     required this.searchHistoryStore,
     required this.hlsProxy,
+    required this.networkSettings,
   });
 
   final SharedPreferences prefs;
@@ -52,11 +54,13 @@ class AppContainer {
   final DownloadManager downloadManager;
   final SearchHistoryStore searchHistoryStore;
   final HlsProxy hlsProxy;
+  final NetworkSettings networkSettings;
 
   static Future<AppContainer> bootstrap() async {
     final prefs = await SharedPreferences.getInstance();
     final tokenStore = TokenStore(prefs);
     final domainStore = DomainStore(prefs);
+    final networkSettings = NetworkSettings(prefs)..applyToRuntime();
     final client = ApiClient(tokenStore: tokenStore, domainStore: domainStore);
     final api = ApiService(client);
     final resources = ResourceService(domainStore);
@@ -86,6 +90,7 @@ class AppContainer {
       downloadManager: downloadManager,
       searchHistoryStore: SearchHistoryStore(prefs),
       hlsProxy: HlsProxy(streams),
+      networkSettings: networkSettings,
     );
   }
 }

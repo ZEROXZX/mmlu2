@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import '../../core/constants/mmlu_keys.dart';
 import '../../core/crypto/mmlu_crypto.dart';
 import '../../core/domain/domain_store.dart';
+import '../../core/network/http_factory.dart';
 import '../models/content.dart';
 
 /// 图片资源服务：拉取密文 → 按方案 AES-CBC 解密 → 得到 JPEG 字节。
@@ -19,7 +20,9 @@ class ResourceService {
               receiveTimeout: const Duration(seconds: 30),
               responseType: ResponseType.bytes,
               headers: {'User-Agent': 'okhttp/4.9.0'},
-            ));
+            )) {
+    if (dio == null) HttpFactory.configure(_dio);
+  }
 
   final DomainStore _domains;
   final Dio _dio;

@@ -104,6 +104,15 @@ class _CoverImageState extends State<CoverImage> {
               width: widget.width,
               height: widget.height,
               fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.low,
+              errorBuilder: (_, __, ___) => const ColoredBox(
+                color: Color(0x11000000),
+                child: Center(
+                  child: Icon(Icons.broken_image_outlined,
+                      color: Colors.black26),
+                ),
+              ),
             );
           },
         ),
