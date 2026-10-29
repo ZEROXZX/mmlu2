@@ -167,6 +167,28 @@ class _FictionViewerState extends State<_FictionViewer> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已删除书签')));
   }
 
+
+  Future<void> _showBookmarksF() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final list = List<String>.from(_prefs?.getStringList('fiction_bm_list') ?? []);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('小说书签列表'),
+        content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: list.length, itemBuilder: (c,i){
+          final e=list[i]; final parts=e.split('|');
+          return ListTile(title: Text('第${parts.length>=5?parts[4]:i+1}页'), subtitle: Text(e), trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
+            final nl=List<String>.from(list)..removeAt(i);
+            await _prefs?.setStringList('fiction_bm_list', nl);
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (mounted) _showBookmarksF();
+          }));
+        })),
+        actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('关闭'))],
+      ),
+    );
+  }
   void _toggleBar() => setState(() => _showBar = !_showBar);
 
   Future<void> _jumpToPage() async {
@@ -216,7 +238,10 @@ class _FictionViewerState extends State<_FictionViewer> {
             left: 0,
             right: 0,
             bottom: 0,
-            child: Container(
+            child: GestureDetector(
+              onTap: () {},
+              behavior: HitTestBehavior.opaque,
+              child: Container(
               color: Colors.black87,
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(
@@ -228,7 +253,8 @@ class _FictionViewerState extends State<_FictionViewer> {
                       const Spacer(),
                       TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
                       TextButton.icon(onPressed: _addBookmark, icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('添加书签', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除书签', style: TextStyle(color: Colors.white))),
+                      TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除本页', style: TextStyle(color: Colors.white))),
+                      TextButton.icon(onPressed: _showBookmarksF, icon: const Icon(Icons.list, color: Colors.white), label: const Text('书签列表', style: TextStyle(color: Colors.white))),
                     ],
                   ),
                   Slider(
@@ -247,6 +273,7 @@ class _FictionViewerState extends State<_FictionViewer> {
                     },
                   ),
                 ],
+              ),
               ),
             ),
           ),
@@ -341,6 +368,32 @@ class _PageViewerState extends State<_PageViewer> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已删除书签')));
   }
 
+
+
+
+
+  Future<void> _showBookmarksC() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final list = List<String>.from(_prefs?.getStringList('comic_bm_list') ?? []);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('漫画书签列表'),
+        content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: list.length, itemBuilder: (c,i){
+          final e=list[i]; final parts=e.split('|');
+          return ListTile(title: Text('第${parts.length>=5?parts[4]:i+1}页'), subtitle: Text(e), trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
+            final nl=List<String>.from(list)..removeAt(i);
+            await _prefs?.setStringList('comic_bm_list', nl);
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (mounted) _showBookmarksC();
+          }));
+        })),
+        actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('关闭'))],
+      ),
+    );
+  }
+
   void _toggleBar() => setState(() => _showBar = !_showBar);
 
   Future<void> _jumpToPage() async {
@@ -388,7 +441,10 @@ class _PageViewerState extends State<_PageViewer> {
             left: 0,
             right: 0,
             bottom: 0,
-            child: Container(
+            child: GestureDetector(
+              onTap: () {},
+              behavior: HitTestBehavior.opaque,
+              child: Container(
               color: Colors.black87,
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(
@@ -400,7 +456,8 @@ class _PageViewerState extends State<_PageViewer> {
                       const Spacer(),
                       TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
                       TextButton.icon(onPressed: _addBookmark, icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('添加书签', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除书签', style: TextStyle(color: Colors.white))),
+                      TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除本页', style: TextStyle(color: Colors.white))),
+                      TextButton.icon(onPressed: _showBookmarksC, icon: const Icon(Icons.list, color: Colors.white), label: const Text('书签列表', style: TextStyle(color: Colors.white))),
                     ],
                   ),
                   Slider(
@@ -419,6 +476,7 @@ class _PageViewerState extends State<_PageViewer> {
                     },
                   ),
                 ],
+              ),
               ),
             ),
           ),

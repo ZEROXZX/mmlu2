@@ -265,43 +265,6 @@ class _PlayerPageState extends State<PlayerPage> {
 
   List<Widget> _overlay(VideoPlayerController ctrl) {
     return [
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        child: Container(
-          decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black54, Colors.transparent])),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            children: [
-              IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.of(context).maybePop()),
-              Expanded(child: Text('${_curItem.title} · $_curQuality', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white))),
-              PopupMenuButton<double>(
-                tooltip: '播放倍速',
-                icon: const Text('倍速', style: TextStyle(color: Colors.white, fontSize: 12)),
-                initialValue: _speed,
-                onSelected: (v) async {
-                  setState(() => _speed = v);
-                  try {
-                    await _controller?.setPlaybackSpeed(v);
-                  } catch (_) {}
-                },
-                itemBuilder: (ctx) => const [
-                  PopupMenuItem(value: 0.5, child: Text('0.5x')),
-                  PopupMenuItem(value: 0.75, child: Text('0.75x')),
-                  PopupMenuItem(value: 1.0, child: Text('1.0x')),
-                  PopupMenuItem(value: 1.25, child: Text('1.25x')),
-                  PopupMenuItem(value: 1.5, child: Text('1.5x')),
-                  PopupMenuItem(value: 1.75, child: Text('1.75x')),
-                  PopupMenuItem(value: 2.0, child: Text('2.0x')),
-                ],
-              ),
-              IconButton(tooltip: '下载离线', icon: const Icon(Icons.download, color: Colors.white), onPressed: _enqueueOffline),
-              IconButton(tooltip: _fullscreen ? '退出全屏' : '全屏', icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white), onPressed: _toggleFullscreen),
-            ],
-          ),
-        ),
-      ),
       Positioned.fill(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -350,6 +313,43 @@ class _PlayerPageState extends State<PlayerPage> {
                     child: Text('${_fmt(_seekPreview)} / ${_fmt(ctrl.value.duration)}', style: const TextStyle(color: Colors.white)),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: Container(
+          decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black54, Colors.transparent])),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.of(context).maybePop()),
+              Expanded(child: Text('${_curItem.title} · $_curQuality', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white))),
+              PopupMenuButton<double>(
+                tooltip: '播放倍速',
+                icon: const Text('倍速', style: TextStyle(color: Colors.white, fontSize: 12)),
+                initialValue: _speed,
+                onSelected: (v) async {
+                  setState(() => _speed = v);
+                  try {
+                    await _controller?.setPlaybackSpeed(v);
+                  } catch (_) {}
+                },
+                itemBuilder: (ctx) => const [
+                  PopupMenuItem(value: 0.5, child: Text('0.5x')),
+                  PopupMenuItem(value: 0.75, child: Text('0.75x')),
+                  PopupMenuItem(value: 1.0, child: Text('1.0x')),
+                  PopupMenuItem(value: 1.25, child: Text('1.25x')),
+                  PopupMenuItem(value: 1.5, child: Text('1.5x')),
+                  PopupMenuItem(value: 1.75, child: Text('1.75x')),
+                  PopupMenuItem(value: 2.0, child: Text('2.0x')),
+                ],
+              ),
+              IconButton(tooltip: '下载离线', icon: const Icon(Icons.download, color: Colors.white), onPressed: _enqueueOffline),
+              IconButton(tooltip: _fullscreen ? '退出全屏' : '全屏', icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white), onPressed: _toggleFullscreen),
             ],
           ),
         ),
