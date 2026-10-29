@@ -112,8 +112,6 @@ class ApiErrorInterceptor extends Interceptor {
   String? _message(Response? res) {
     if (res == null) return null;
     final d = res.data;
-    // 统一走 extractApiMessage：兼容 {error:".."} / {error:{message:".."}} /
-    // {message:".."} 等信封，避免 Map 型 error 被漏掉退化成 network error。
     final msg = extractApiMessage(d);
     if (msg.isNotEmpty) return msg;
     if (d is String) return d.length > 300 ? '${d.substring(0, 300)}…' : d;
@@ -159,30 +157,22 @@ class ApiClient {
         },
       ),
     ]);
-    // 桌面端 Dart 不读系统代理，统一在此挂代理/证书配置。
     HttpFactory.configure(dio);
   }
 
   final TokenStore tokenStore;
   final DomainStore domainStore;
   final String apiKey;
-  final Future<void> Function()? onAccountConflict;
   final String secureKey;
   late final Dio dio;
 
   Future<void>? _registering;
 
-  /// 游客 token 是否存在。
   bool get hasToken {
     final t = tokenStore.token;
     return t != null && t.isNotEmpty;
   }
 
-  /// 确保存在一个 token：无（或 [force]）时做一次 `v2/register` 设备注册，
-  /// 拿到游客 token 并存储。并发调用共享同一次请求。
-  ///
-  /// 对应参考实现 `register()`：启动即注册，使内容接口不再因缺
-  /// `Authorization` 而返回 499「缺少 Token 参数」。
   Future<void> ensureGuestToken({bool force = false}) {
     if (!force && hasToken) return Future<void>.value();
     return _registering ??= _doRegister().whenComplete(() {
@@ -219,8 +209,6 @@ class ApiClient {
       }
       if (token != null && token.isNotEmpty) {
         await tokenStore.save(token);
-        // 注册后必须调一次 startup 激活会话，否则内容接口返回
-        // `{"error":{"msg":"unidentify"}}`（参考实现 register() 内同样调用）。
         try {
           await dio.get('$root/${Endpoints.startup}',
               queryParameters: {'platform': 2});
@@ -235,7 +223,6 @@ class ApiClient {
     }
   }
 
-  /// 解析并按需解密 host.txt，返回明文 JSON 字符串。
   Future<String> fetchAndDecryptHostTxt() async {
     final plain = Dio();
     HttpFactory.configure(plain);
@@ -264,29 +251,27 @@ class ApiClient {
   }
 }
 
-/// 无响应（DNS/连接/TLS/超时）时给出可定位的中文原因。
 String _networkMessage(DioException err) {
-    final detail = _flattenError(err.error ?? err.message);
-    final base = switch (err.type) {
-      DioExceptionType.connectionTimeout => '连接超时',
-      DioExceptionType.sendTimeout => '发送超时',
-      DioExceptionType.receiveTimeout => '接收超时',
-      DioExceptionType.badCertificate => '证书校验失败',
-      DioExceptionType.connectionError => '网络连接失败',
-      DioExceptionType.cancel => '请求已取消',
-      _ => 'network error',
-    };
-    final extra = <String>[
-      HttpFactory.proxy == null ? '' : HttpFactory.describe(),
-      if (detail != null && detail.isNotEmpty) detail,
-    ].where((e) => e.isNotEmpty).join('；');
-    return extra.isEmpty ? base : '$base（$extra）';
-  }
+  final detail = _flattenError(err.error ?? err.message);
+  final base = switch (err.type) {
+    DioExceptionType.connectionTimeout => '连接超时',
+    DioExceptionType.sendTimeout => '发送超时',
+    DioExceptionType.receiveTimeout => '接收超时',
+    DioExceptionType.badCertificate => '证书校验失败',
+    DioExceptionType.connectionError => '网络连接失败',
+    DioExceptionType.cancel => '请求已取消',
+    _ => 'network error',
+  };
+  final extra = <String>[
+    HttpFactory.proxy == null ? '' : HttpFactory.describe(),
+    if (detail != null && detail.isNotEmpty) detail,
+  ].where((e) => e.isNotEmpty).join('；');
+  return extra.isEmpty ? base : '$base（$extra）';
+}
 
 String? _flattenError(Object? e) {
-    if (e == null) return null;
-    final s = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (s.isEmpty) return null;
-    return s.length > 200 ? '${s.substring(0, 200)}…' : s;
-  }
-
+  if (e == null) return null;
+  final s = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (s.isEmpty) return null;
+  return s.length > 200 ? '${s.substring(0, 200)}…' : s;
+}

@@ -32,8 +32,8 @@ class _FavoritesTabState extends State<FavoritesTab> {
         source: it.source,
       ),
     ));
-    // 详情页里可能取消了收藏，返回后需要刷新
-    // PaginatedContentList 会在重新显示时自动刷新
+    // 详情页里可能取消了收藏，返回后刷新列表
+    if (mounted) setState(() {});
   }
 
   @override
@@ -49,18 +49,14 @@ class _FavoritesTabState extends State<FavoritesTab> {
                 ChoiceChip(
                   label: Text(k.label),
                   selected: _kind == k,
-                  onSelected: (_) => setState(() {
-                    _kind = k;
-                  }),
+                  onSelected: (_) => setState(() => _kind = k),
                 ),
             ],
           ),
         ),
         Expanded(
-          // 使用 PaginatedContentList 支持分页加载
           child: PaginatedContentList(
-            // 种类变化时重建，重新从第 1 页开始
-            key: ValueKey(_kind.tag),
+            key: ValueKey(_kind),
             loader: (page) => context
                 .read<AppContainer>()
                 .contentRepo
