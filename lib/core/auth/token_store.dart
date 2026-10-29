@@ -33,6 +33,10 @@ class TokenStore {
     return id;
   }
 
+  Future<void> clearUniversalId() async {
+    await _prefs.remove(_universalIdKey);
+  }
+
   String? get token {
     final v = _prefs.getString(_tokenKey);
     return (v == null || v.isEmpty) ? null : v;

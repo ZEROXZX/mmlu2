@@ -36,8 +36,6 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _showControls = true;
   bool _fullscreen = false;
   Timer? _hideTimer;
-  VoidCallback? _managerListener;
-  String? _watchTaskId;
 
   late ContentItem _curItem;
   late String _curMedia;

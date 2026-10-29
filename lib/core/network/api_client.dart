@@ -163,19 +163,19 @@ class ApiClient {
   }
 
   Future<void> _doRegister() async {
-    final uid = tokenStore.universalId;
-    final body = <String, dynamic>{
-      'universal_id': uid,
-      'platform': 2,
-      'model': 'SM-G975F',
-      'key': MmluCrypto.sha256Hex('hcg${uid}hcg'),
-      'install_channel': 'com.android.vending',
-      'install': '',
-      'source': '',
-    };
     final base = domainStore.urlOf(DomainType.apiData);
     final root = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
-    try {
+    Future<void> tryRegister() async {
+      final uid = tokenStore.universalId;
+      final body = <String, dynamic>{
+        'universal_id': uid,
+        'platform': 2,
+        'model': 'SM-G975F',
+        'key': MmluCrypto.sha256Hex('hcg${uid}hcg'),
+        'install_channel': 'com.android.vending',
+        'install': '',
+        'source': '',
+      };
       final r = await dio.post(
         '$root/${Endpoints.register}',
         data: body,
@@ -191,16 +191,34 @@ class ApiClient {
       }
       if (token != null && token.isNotEmpty) {
         await tokenStore.save(token);
-        // 注册后必须调一次 startup 激活会话，否则内容接口返回
-        // `{"error":{"msg":"unidentify"}}`（参考实现 register() 内同样调用）。
         try {
           await dio.get('$root/${Endpoints.startup}',
               queryParameters: {'platform': 2});
         } catch (_) {}
+        return;
       }
+      throw ApiException(-1, '游客注册失败: 无token');
+    }
+    try {
+      await tryRegister();
     } on DioException catch (e) {
+      final code = e.response?.statusCode ?? -1;
+      final msg = (e.message ?? '').toLowerCase();
+      final em = extractApiMessage(e.response?.data).toLowerCase();
+      if (code == 401 ||
+          code == 409 ||
+          msg.contains('universal') ||
+          em.contains('universal') ||
+          msg.contains('used') ||
+          em.contains('used')) {
+        try {
+          await tokenStore.clearUniversalId();
+          await tryRegister();
+          return;
+        } catch (_) {}
+      }
       throw ApiException(
-        e.response?.statusCode ?? -1,
+        code,
         '游客注册失败: ${_networkMessage(e)}',
         body: e.response?.data,
       );
