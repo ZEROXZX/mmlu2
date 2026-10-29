@@ -178,12 +178,26 @@ class _FictionViewerState extends State<_FictionViewer> {
         title: const Text('小说书签列表'),
         content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: list.length, itemBuilder: (c,i){
           final e=list[i]; final parts=e.split('|');
-          return ListTile(title: Text('第${parts.length>=5?parts[4]:i+1}页'), subtitle: Text(e), trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
-            final nl=List<String>.from(list)..removeAt(i);
-            await _prefs?.setStringList('fiction_bm_list', nl);
-            if (ctx.mounted) Navigator.pop(ctx);
-            if (mounted) _showBookmarksF();
-          }));
+          final pnum = parts.length>=5 ? int.tryParse(parts[4]) ?? 1 : 1;
+          return ListTile(
+            title: Text('第$pnum页'),
+            subtitle: Text(e),
+            onTap: () {
+              if (pnum>=1 && pnum<=_pages.length && _controller.hasClients) {
+                _controller.jumpToPage(pnum-1);
+                setState(()=>_current=pnum);
+                _saveBookmark(pnum);
+              }
+              Navigator.pop(ctx);
+              setState(()=>_showBar=false);
+            },
+            trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
+              final nl=List<String>.from(list)..removeAt(i);
+              await _prefs?.setStringList('fiction_bm_list', nl);
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) _showBookmarksF();
+            }),
+          );
         })),
         actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('关闭'))],
       ),
@@ -217,6 +231,7 @@ class _FictionViewerState extends State<_FictionViewer> {
       children: [
         GestureDetector(
           onTap: _toggleBar,
+          behavior: HitTestBehavior.translucent,
           child: PageView.builder(
             controller: _controller,
             scrollDirection: Axis.horizontal,
@@ -239,7 +254,7 @@ class _FictionViewerState extends State<_FictionViewer> {
             right: 0,
             bottom: 0,
             child: GestureDetector(
-              onTap: () {},
+              onTap: _toggleBar,
               behavior: HitTestBehavior.opaque,
               child: Container(
               color: Colors.black87,
@@ -247,15 +262,17 @@ class _FictionViewerState extends State<_FictionViewer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Text('$_current / ${_pages.length}', style: const TextStyle(color: Colors.white)),
-                      const Spacer(),
-                      TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _addBookmark, icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('添加书签', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除本页', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _showBookmarksF, icon: const Icon(Icons.list, color: Colors.white), label: const Text('书签列表', style: TextStyle(color: Colors.white))),
-                    ],
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Text('$_current / ${_pages.length}', style: const TextStyle(color: Colors.white)),
+                        TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
+                        TextButton.icon(onPressed: _addBookmark, icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('添加书签', style: TextStyle(color: Colors.white))),
+                        TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除本页', style: TextStyle(color: Colors.white))),
+                        TextButton.icon(onPressed: _showBookmarksF, icon: const Icon(Icons.list, color: Colors.white), label: const Text('书签列表', style: TextStyle(color: Colors.white))),
+                      ],
+                    ),
                   ),
                   Slider(
                     value: _current.toDouble(),
@@ -382,12 +399,26 @@ class _PageViewerState extends State<_PageViewer> {
         title: const Text('漫画书签列表'),
         content: SizedBox(width: double.maxFinite, child: ListView.builder(shrinkWrap: true, itemCount: list.length, itemBuilder: (c,i){
           final e=list[i]; final parts=e.split('|');
-          return ListTile(title: Text('第${parts.length>=5?parts[4]:i+1}页'), subtitle: Text(e), trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
-            final nl=List<String>.from(list)..removeAt(i);
-            await _prefs?.setStringList('comic_bm_list', nl);
-            if (ctx.mounted) Navigator.pop(ctx);
-            if (mounted) _showBookmarksC();
-          }));
+          final pnum = parts.length>=5 ? int.tryParse(parts[4]) ?? 1 : 1;
+          return ListTile(
+            title: Text('第$pnum页'),
+            subtitle: Text(e),
+            onTap: () {
+              if (pnum>=1 && pnum<=widget.pages.length && _controller.hasClients) {
+                _controller.jumpToPage(pnum-1);
+                setState(()=>_current=pnum);
+                _saveBookmark(pnum);
+              }
+              Navigator.pop(ctx);
+              setState(()=>_showBar=false);
+            },
+            trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
+              final nl=List<String>.from(list)..removeAt(i);
+              await _prefs?.setStringList('comic_bm_list', nl);
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) _showBookmarksC();
+            }),
+          );
         })),
         actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('关闭'))],
       ),
@@ -422,6 +453,7 @@ class _PageViewerState extends State<_PageViewer> {
       children: [
         GestureDetector(
           onTap: _toggleBar,
+          behavior: HitTestBehavior.translucent,
           child: PageView.builder(
             controller: _controller,
             itemCount: widget.pages.length,
@@ -442,7 +474,7 @@ class _PageViewerState extends State<_PageViewer> {
             right: 0,
             bottom: 0,
             child: GestureDetector(
-              onTap: () {},
+              onTap: _toggleBar,
               behavior: HitTestBehavior.opaque,
               child: Container(
               color: Colors.black87,
@@ -450,15 +482,17 @@ class _PageViewerState extends State<_PageViewer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Text('$_current / ${widget.pages.length}', style: const TextStyle(color: Colors.white)),
-                      const Spacer(),
-                      TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _addBookmark, icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('添加书签', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除本页', style: TextStyle(color: Colors.white))),
-                      TextButton.icon(onPressed: _showBookmarksC, icon: const Icon(Icons.list, color: Colors.white), label: const Text('书签列表', style: TextStyle(color: Colors.white))),
-                    ],
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Text('$_current / ${widget.pages.length}', style: const TextStyle(color: Colors.white)),
+                        TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
+                        TextButton.icon(onPressed: _addBookmark, icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('添加书签', style: TextStyle(color: Colors.white))),
+                        TextButton.icon(onPressed: _removeBookmark, icon: const Icon(Icons.bookmark_remove, color: Colors.white), label: const Text('删除本页', style: TextStyle(color: Colors.white))),
+                        TextButton.icon(onPressed: _showBookmarksC, icon: const Icon(Icons.list, color: Colors.white), label: const Text('书签列表', style: TextStyle(color: Colors.white))),
+                      ],
+                    ),
                   ),
                   Slider(
                     value: _current.toDouble(),
