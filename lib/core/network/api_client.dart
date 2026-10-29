@@ -40,7 +40,7 @@ class AuthInterceptor extends Interceptor {
 
 /// 将 HTTP 非 2xx 或缺 token 等错误统一转换为 [ApiException]。
 class ApiErrorInterceptor extends Interceptor {
-  ApiErrorInterceptor(this.apiKey);
+  ApiErrorInterceptor(this.apiKey, {this.onAccountConflict});
 
   final String apiKey;
 
@@ -48,6 +48,33 @@ class ApiErrorInterceptor extends Interceptor {
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     final code = response.statusCode ?? 0;
     if (code >= 400) {
+      // 特殊处理 496: 账号在其他设备登录
+      if (code == 496 && onAccountConflict != null) {
+        // 异步执行账号冲突处理
+        onAccountConflict!().then((_) {
+          handler.reject(
+            DioException(
+              requestOptions: response.requestOptions,
+              response: response,
+              type: DioExceptionType.badResponse,
+              message: '您的账号已在其他设备登录，已自动切换为游客模式',
+            ),
+            true,
+          );
+        }).catchError((e) {
+          handler.reject(
+            DioException(
+              requestOptions: response.requestOptions,
+              response: response,
+              type: DioExceptionType.badResponse,
+              message: _message(response),
+            ),
+            true,
+          );
+        });
+        return;
+      }
+
       handler.reject(
         DioException(
           requestOptions: response.requestOptions,
@@ -118,7 +145,18 @@ class ApiClient {
       AuthInterceptor(tokenStore),
       SignInterceptor(this.secureKey),
       DecryptInterceptor(this.apiKey),
-      ApiErrorInterceptor(this.apiKey),
+      ApiErrorInterceptor(
+        this.apiKey,
+        onAccountConflict: () async {
+          try {
+            await tokenStore.clear();
+            await tokenStore.markLoggedIn(false);
+            await ensureGuestToken(force: true);
+          } catch (e) {
+            // 忽略错误，确保不影响主流程
+          }
+        },
+      ),
     ]);
     // 桌面端 Dart 不读系统代理，统一在此挂代理/证书配置。
     HttpFactory.configure(dio);
@@ -249,3 +287,4 @@ String? _flattenError(Object? e) {
     if (s.isEmpty) return null;
     return s.length > 200 ? '${s.substring(0, 200)}…' : s;
   }
+
