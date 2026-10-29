@@ -515,10 +515,14 @@ class _BodyState extends State<_Body> {
     if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => PlayerPage(
-        item: item,
-        mediaPath: media[quality]!,
-        quality: quality,
-        episodes: episodes,
+        kind: item.kind,
+        episodes: episodes.map((e) => EpisodeItem(
+          id: e.id,
+          title: e.title,
+          qualities: e.media.keys.toList(),
+        )).toList(),
+        initialIndex: episodes.indexOf(item),
+        initialQuality: quality,
       ),
     ));
   }
@@ -815,20 +819,20 @@ class _BodyState extends State<_Body> {
       _toast('无图片');
       return;
     }
-    if (!mounted) return;
-    final items = <ImageLinkItem>[
-      for (var i = 0; i < pages.length; i++)
-        ImageLinkItem(
-          index: i + 1,
-          url: c.resourceService.urlFor(widget.kind, pages[i].path),
-          key: pages[i].key,
-          iv: pages[i].iv,
-        ),
+    final urls = <String>[
+      for (final p in pages) c.resourceService.urlFor(widget.kind, p.path),
     ];
+    final keys = <String>[
+      for (var i = 0; i < pages.length; i++)
+        if ((pages[i].key ?? '').isNotEmpty)
+          '${i + 1}. key=${pages[i].key} iv=${pages[i].iv ?? ''}',
+    ];
+    if (!mounted) return;
     await showDownloadLinks(
       context,
       title: _title(d.item),
-      imageLinks: items,
+      encrypted: urls.join('\n'),
+      key: keys.join('\n'),
       emptyHint: '暂无可用链接',
     );
   }

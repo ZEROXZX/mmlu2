@@ -40,15 +40,42 @@ class AuthInterceptor extends Interceptor {
 
 /// 将 HTTP 非 2xx 或缺 token 等错误统一转换为 [ApiException]。
 class ApiErrorInterceptor extends Interceptor {
-  ApiErrorInterceptor(this.apiKey, this._client);
+  ApiErrorInterceptor(this.apiKey, {this.onAccountConflict});
 
   final String apiKey;
-  final ApiClient _client;
+  final Future<void> Function()? onAccountConflict;
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     final code = response.statusCode ?? 0;
     if (code >= 400) {
+      // 特殊处理 496: 账号在其他设备登录
+      if (code == 496 && onAccountConflict != null) {
+        // 异步执行账号冲突处理
+        onAccountConflict!().then((_) {
+          handler.reject(
+            DioException(
+              requestOptions: response.requestOptions,
+              response: response,
+              type: DioExceptionType.badResponse,
+              message: '您的账号已在其他设备登录，已自动切换为游客模式',
+            ),
+            true,
+          );
+        }).catchError((e) {
+          handler.reject(
+            DioException(
+              requestOptions: response.requestOptions,
+              response: response,
+              type: DioExceptionType.badResponse,
+              message: _message(response),
+            ),
+            true,
+          );
+        });
+        return;
+      }
+
       handler.reject(
         DioException(
           requestOptions: response.requestOptions,
@@ -66,24 +93,13 @@ class ApiErrorInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final res = err.response;
-    final code = res?.statusCode ?? -1;
-    // 帐号在其他设备登录：强制登出转为游客
-    if (code == 496 && _client.tokenStore.isLoggedIn) {
-      Future.microtask(() async {
-        try {
-          await _client.tokenStore.clear();
-          final apiClient = ApiClient(tokenStore: _client.tokenStore, domainStore: _client.domainStore);
-          await apiClient.ensureGuestToken(force: true);
-        } catch (_) {}
-      });
-    }
     handler.reject(
       DioException(
         requestOptions: err.requestOptions,
         response: res,
         type: err.type,
         error: ApiException(
-          code,
+          res?.statusCode ?? -1,
           _message(res) ?? _networkMessage(err),
           body: res?.data,
         ),
@@ -96,8 +112,6 @@ class ApiErrorInterceptor extends Interceptor {
   String? _message(Response? res) {
     if (res == null) return null;
     final d = res.data;
-    // 统一走 extractApiMessage：兼容 {error:".."} / {error:{message:".."}} /
-    // {message:".."} 等信封，避免 Map 型 error 被漏掉退化成 network error。
     final msg = extractApiMessage(d);
     if (msg.isNotEmpty) return msg;
     if (d is String) return d.length > 300 ? '${d.substring(0, 300)}…' : d;
@@ -130,9 +144,19 @@ class ApiClient {
       AuthInterceptor(tokenStore),
       SignInterceptor(this.secureKey),
       DecryptInterceptor(this.apiKey),
-      ApiErrorInterceptor(this.apiKey, this),
+      ApiErrorInterceptor(
+        this.apiKey,
+        onAccountConflict: () async {
+          try {
+            await tokenStore.clear();
+            await tokenStore.markLoggedIn(false);
+            await ensureGuestToken(force: true);
+          } catch (e) {
+            // 忽略错误，确保不影响主流程
+          }
+        },
+      ),
     ]);
-    // 桌面端 Dart 不读系统代理，统一在此挂代理/证书配置。
     HttpFactory.configure(dio);
   }
 
@@ -144,17 +168,11 @@ class ApiClient {
 
   Future<void>? _registering;
 
-  /// 游客 token 是否存在。
   bool get hasToken {
     final t = tokenStore.token;
     return t != null && t.isNotEmpty;
   }
 
-  /// 确保存在一个 token：无（或 [force]）时做一次 `v2/register` 设备注册，
-  /// 拿到游客 token 并存储。并发调用共享同一次请求。
-  ///
-  /// 对应参考实现 `register()`：启动即注册，使内容接口不再因缺
-  /// `Authorization` 而返回 499「缺少 Token 参数」。
   Future<void> ensureGuestToken({bool force = false}) {
     if (!force && hasToken) return Future<void>.value();
     return _registering ??= _doRegister().whenComplete(() {
@@ -191,8 +209,6 @@ class ApiClient {
       }
       if (token != null && token.isNotEmpty) {
         await tokenStore.save(token);
-        // 注册后必须调一次 startup 激活会话，否则内容接口返回
-        // `{"error":{"msg":"unidentify"}}`（参考实现 register() 内同样调用）。
         try {
           await dio.get('$root/${Endpoints.startup}',
               queryParameters: {'platform': 2});
@@ -207,7 +223,6 @@ class ApiClient {
     }
   }
 
-  /// 解析并按需解密 host.txt，返回明文 JSON 字符串。
   Future<String> fetchAndDecryptHostTxt() async {
     final plain = Dio();
     HttpFactory.configure(plain);
@@ -236,28 +251,27 @@ class ApiClient {
   }
 }
 
-/// 无响应（DNS/连接/TLS/超时）时给出可定位的中文原因。
 String _networkMessage(DioException err) {
-    final detail = _flattenError(err.error ?? err.message);
-    final base = switch (err.type) {
-      DioExceptionType.connectionTimeout => '连接超时',
-      DioExceptionType.sendTimeout => '发送超时',
-      DioExceptionType.receiveTimeout => '接收超时',
-      DioExceptionType.badCertificate => '证书校验失败',
-      DioExceptionType.connectionError => '网络连接失败',
-      DioExceptionType.cancel => '请求已取消',
-      _ => 'network error',
-    };
-    final extra = <String>[
-      HttpFactory.proxy == null ? '' : HttpFactory.describe(),
-      if (detail != null && detail.isNotEmpty) detail,
-    ].where((e) => e.isNotEmpty).join('；');
-    return extra.isEmpty ? base : '$base（$extra）';
-  }
+  final detail = _flattenError(err.error ?? err.message);
+  final base = switch (err.type) {
+    DioExceptionType.connectionTimeout => '连接超时',
+    DioExceptionType.sendTimeout => '发送超时',
+    DioExceptionType.receiveTimeout => '接收超时',
+    DioExceptionType.badCertificate => '证书校验失败',
+    DioExceptionType.connectionError => '网络连接失败',
+    DioExceptionType.cancel => '请求已取消',
+    _ => 'network error',
+  };
+  final extra = <String>[
+    HttpFactory.proxy == null ? '' : HttpFactory.describe(),
+    if (detail != null && detail.isNotEmpty) detail,
+  ].where((e) => e.isNotEmpty).join('；');
+  return extra.isEmpty ? base : '$base（$extra）';
+}
 
 String? _flattenError(Object? e) {
-    if (e == null) return null;
-    final s = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (s.isEmpty) return null;
-    return s.length > 200 ? '${s.substring(0, 200)}…' : s;
-  }
+  if (e == null) return null;
+  final s = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (s.isEmpty) return null;
+  return s.length > 200 ? '${s.substring(0, 200)}…' : s;
+}

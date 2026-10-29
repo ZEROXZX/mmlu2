@@ -114,21 +114,6 @@ class ApiService {
         final err = e.error;
         final code =
             err is ApiException ? err.statusCode : (e.response?.statusCode ?? -1);
-        // 账号在其他设备登录：强制登出转为游客（仅针对已登录账号）
-        if (code == 496 && _client.tokenStore.isLoggedIn) {
-          try {
-            await _client.tokenStore.clear();
-            await _client.ensureGuestToken(force: true);
-            try {
-              final root = _client.domainStore.urlOf(DomainType.apiData);
-              final rroot = root.endsWith('/') ? root.substring(0, root.length - 1) : root;
-              await _client.dio.get('$rroot/${Endpoints.startup}', queryParameters: {'platform': 2});
-            } catch (_) {}
-            return (await f()).data;
-          } on DioException catch (e2) {
-            _raise(e2);
-          }
-        }
         // 缺/失效 token：补一个游客 token 后原样重试一次（参考实现 call() 的自愈）。
         if ((code == 499 || code == 495) && !_client.tokenStore.isLoggedIn) {
           try {

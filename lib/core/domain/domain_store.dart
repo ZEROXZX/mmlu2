@@ -21,6 +21,7 @@ class DomainStore {
   DomainStore(this._prefs);
 
   final SharedPreferences _prefs;
+
   /// BaseDomain 静态默认值（取沙箱实测可达线路，host.txt 可覆盖）。
   static const Map<DomainType, String> _defaults = {
     DomainType.apiData: 'https://api1.mmlu.services',
