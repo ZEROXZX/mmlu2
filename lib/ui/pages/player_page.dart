@@ -36,6 +36,10 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _showControls = true;
   bool _fullscreen = false;
   Timer? _hideTimer;
+  double _speed = 1.0;
+  Offset? _dragStart;
+  double _dragDx = 0;
+  Duration _seekPreview = Duration.zero;
 
   late ContentItem _curItem;
   late String _curMedia;
@@ -273,6 +277,26 @@ class _PlayerPageState extends State<PlayerPage> {
             children: [
               IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.of(context).maybePop()),
               Expanded(child: Text('${_curItem.title} · $_curQuality', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white))),
+              PopupMenuButton<double>(
+                tooltip: '播放倍速',
+                icon: const Text('倍速', style: TextStyle(color: Colors.white, fontSize: 12)),
+                initialValue: _speed,
+                onSelected: (v) async {
+                  setState(() => _speed = v);
+                  try {
+                    await _controller?.setPlaybackSpeed(v);
+                  } catch (_) {}
+                },
+                itemBuilder: (ctx) => const [
+                  PopupMenuItem(value: 0.5, child: Text('0.5x')),
+                  PopupMenuItem(value: 0.75, child: Text('0.75x')),
+                  PopupMenuItem(value: 1.0, child: Text('1.0x')),
+                  PopupMenuItem(value: 1.25, child: Text('1.25x')),
+                  PopupMenuItem(value: 1.5, child: Text('1.5x')),
+                  PopupMenuItem(value: 1.75, child: Text('1.75x')),
+                  PopupMenuItem(value: 2.0, child: Text('2.0x')),
+                ],
+              ),
               IconButton(tooltip: '下载离线', icon: const Icon(Icons.download, color: Colors.white), onPressed: _enqueueOffline),
               IconButton(tooltip: _fullscreen ? '退出全屏' : '全屏', icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white), onPressed: _toggleFullscreen),
             ],
@@ -280,14 +304,54 @@ class _PlayerPageState extends State<PlayerPage> {
         ),
       ),
       Positioned.fill(
-        child: Center(
-          child: GestureDetector(
-            onTap: _togglePlay,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-              child: Icon(ctrl.value.isPlaying ? Icons.pause : Icons.play_arrow, size: 48, color: Colors.white),
-            ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _togglePlay,
+          onHorizontalDragStart: (d) {
+            _dragStart = d.globalPosition;
+            _dragDx = 0;
+            _seekPreview = ctrl.value.position;
+            setState(() {});
+          },
+          onHorizontalDragUpdate: (d) {
+            if (_dragStart == null) return;
+            _dragDx += d.delta.dx;
+            final width = MediaQuery.of(context).size.width;
+            if (width <= 0) return;
+            final total = ctrl.value.duration.inSeconds > 0 ? ctrl.value.duration : const Duration(minutes: 10);
+            final sec = (_dragDx / width * 90).round();
+            var np = ctrl.value.position + Duration(seconds: sec);
+            if (np < Duration.zero) np = Duration.zero;
+            if (np > total) np = total;
+            setState(() => _seekPreview = np);
+          },
+          onHorizontalDragEnd: (d) async {
+            if (_dragStart == null) return;
+            try {
+              await ctrl.seekTo(_seekPreview);
+            } catch (_) {}
+            _dragStart = null;
+            _dragDx = 0;
+            setState(() {});
+          },
+          child: Stack(
+            children: [
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                  child: Icon(ctrl.value.isPlaying ? Icons.pause : Icons.play_arrow, size: 48, color: Colors.white),
+                ),
+              ),
+              if (_dragStart != null)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+                    child: Text('${_fmt(_seekPreview)} / ${_fmt(ctrl.value.duration)}', style: const TextStyle(color: Colors.white)),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

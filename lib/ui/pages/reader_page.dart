@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
@@ -92,6 +93,8 @@ class _PageViewer extends StatefulWidget {
 class _PageViewerState extends State<_PageViewer> {
   final _controller = PageController();
   int _current = 1;
+  bool _showBar = false;
+  SharedPreferences? _prefs;
 
   ResourceRef _ref(ReadPage p) => ResourceRef(
         path: p.path,
@@ -101,32 +104,128 @@ class _PageViewerState extends State<_PageViewer> {
       );
 
   @override
+  void initState() {
+    super.initState();
+    _loadBookmark();
+  }
+
+  Future<void> _loadBookmark() async {
+    _prefs = await SharedPreferences.getInstance();
+    final saved = _prefs?.getInt('bookmark_page_${widget.kind.tag}');
+    if (saved != null && saved >= 1 && saved <= widget.pages.length && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_controller.hasClients) {
+          _controller.jumpToPage(saved - 1);
+          setState(() => _current = saved);
+        }
+      });
+    }
+  }
+
+  Future<void> _saveBookmark(int page) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs?.setInt('bookmark_page_${widget.kind.tag}', page);
+  }
+
+  void _toggleBar() => setState(() => _showBar = !_showBar);
+
+  Future<void> _jumpToPage() async {
+    final ctrl = TextEditingController(text: _current.toString());
+    final res = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('跳转到页码'),
+        content: TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: '1-$pagesCount')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () {
+            final v = int.tryParse(ctrl.text);
+            Navigator.pop(ctx, v);
+          }, child: const Text('跳转')),
+        ],
+      ),
+    );
+    if (res != null && res >= 1 && res <= widget.pages.length && _controller.hasClients) {
+      _controller.jumpToPage(res - 1);
+      setState(() => _current = res);
+      _saveBookmark(res);
+    }
+  }
+
+  int get pagesCount => widget.pages.length;
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        PageView.builder(
-          controller: _controller,
-          itemCount: widget.pages.length,
-          onPageChanged: (i) => setState(() => _current = i + 1),
-          itemBuilder: (context, i) => _PageImage(
-            service: widget.service,
-            kind: widget.kind,
-            ref: _ref(widget.pages[i]),
-          ),
-        ),
-        Positioned(
-          bottom: 12,
-          right: 12,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(16),
+        GestureDetector(
+          onTap: _toggleBar,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: widget.pages.length,
+            onPageChanged: (i) {
+              setState(() => _current = i + 1);
+              _saveBookmark(i + 1);
+            },
+            itemBuilder: (context, i) => _PageImage(
+              service: widget.service,
+              kind: widget.kind,
+              ref: _ref(widget.pages[i]),
             ),
-            child: Text('$_current / ${widget.pages.length}',
-                style: const TextStyle(color: Colors.white)),
           ),
         ),
+        if (_showBar)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              color: Colors.black87,
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Text('$_current / ${widget.pages.length}', style: const TextStyle(color: Colors.white)),
+                      const Spacer(),
+                      TextButton.icon(onPressed: _jumpToPage, icon: const Icon(Icons.search, color: Colors.white), label: const Text('跳转', style: TextStyle(color: Colors.white))),
+                      TextButton.icon(onPressed: () => _saveBookmark(_current), icon: const Icon(Icons.bookmark_add, color: Colors.white), label: const Text('书签', style: TextStyle(color: Colors.white))),
+                    ],
+                  ),
+                  Slider(
+                    value: _current.toDouble(),
+                    min: 1,
+                    max: widget.pages.length.toDouble(),
+                    divisions: widget.pages.length > 1 ? widget.pages.length - 1 : 1,
+                    onChanged: (v) {},
+                    onChangeEnd: (v) {
+                      final p = v.toInt();
+                      if (_controller.hasClients) {
+                        _controller.jumpToPage(p - 1);
+                        setState(() => _current = p);
+                        _saveBookmark(p);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!_showBar)
+          Positioned(
+            bottom: 12,
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text('$_current / ${widget.pages.length}',
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ),
       ],
     );
   }
