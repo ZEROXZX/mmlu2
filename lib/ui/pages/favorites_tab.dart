@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
 import '../../data/models/content.dart';
-import '../widgets/async_view.dart';
 import '../widgets/paginated_content.dart';
 import 'detail_page.dart';
 
@@ -67,7 +66,7 @@ class _FavoritesTabState extends State<FavoritesTab> {
                 .contentRepo
                 .favorites(_kind, pages: page),
             onTap: _open,
-            emptyHint: '暂无收藏',
+            emptyText: '暂无收藏',
           ),
         ),
       ],

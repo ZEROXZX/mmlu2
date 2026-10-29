@@ -76,14 +76,25 @@ class _PlayerPageState extends State<PlayerPage> {
 
   // ---- 控制器生命周期 -------------------------------------------------------
 
-  Future<void> _swap(VideoPlayerController next) async {
-    final old = _controller;
-    _controller = next;
-    if (old != null) {
-      old.removeListener(_onTick);
-      await old.dispose();
+    Future<void> _swap(VideoPlayerController next) async {
+    final prev = _controller;
+    if (prev != null) {
+      await prev.pause();
+      await prev.dispose();
     }
-    next.addListener(_onTick);
+    _controller = next;
+    try {
+      await next.initialize();
+      // 应用倍速设置
+      await next.setPlaybackSpeed(_playbackSpeed);
+      if (mounted) {
+        setState(() {});
+        await next.play();
+      }
+    } catch (e) {
+      if (mounted) setState(() => _busy = false);
+      rethrow;
+    }
   }
 
   Future<void> _openFile(String path) async {
@@ -397,8 +408,32 @@ class _PlayerPageState extends State<PlayerPage> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: GestureDetector(
+                            child: GestureDetector(
                 onTap: _toggleControls,
+                onDoubleTap: _togglePlay,
+                onHorizontalDragUpdate: (details) {
+                  if (_controller == null || !_controller!.value.isInitialized) return;
+                  // 横向滑动调节进度
+                  final totalWidth = context.size?.width ?? 1;
+                  final delta = details.delta.dx / totalWidth;
+                  final duration = _controller!.value.duration;
+                  final position = _controller!.value.position;
+                  final newPosition = position + Duration(
+                    milliseconds: (delta * duration.inMilliseconds * 0.3).round(),
+                  );
+                  final clamped = Duration(
+                    milliseconds: newPosition.inMilliseconds.clamp(
+                      0,
+                      duration.inMilliseconds,
+                    ),
+                  );
+                  _controller!.seekTo(clamped);
+                  // 显示控制面板
+                  setState(() {
+                    _showControls = true;
+                    _resetHideTimer();
+                  });
+                },
                 child: ready
                     ? Center(
                         child: AspectRatio(
@@ -407,6 +442,9 @@ class _PlayerPageState extends State<PlayerPage> {
                               : ctrl.value.aspectRatio,
                           child: VideoPlayer(ctrl),
                         ),
+                      )
+                    : _placeholder(context),
+              ),
                       )
                     : _placeholder(context),
               ),
@@ -555,10 +593,74 @@ class _PlayerPageState extends State<PlayerPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              VideoProgressIndicator(
-                ctrl,
-                allowScrubbing: true,
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                            // 自定义进度条，解决拖动时暂停问题
+              GestureDetector(
+                onHorizontalDragStart: (details) {
+                  setState(() => _isSeeking = true);
+                },
+                onHorizontalDragUpdate: (details) {
+                  if (!ctrl.value.isInitialized) return;
+                  final box = context.findRenderObject() as RenderBox?;
+                  if (box == null) return;
+                  final position = details.localPosition.dx / box.size.width;
+                  final duration = ctrl.value.duration;
+                  final seekTo = duration * position.clamp(0.0, 1.0);
+                  ctrl.seekTo(seekTo);
+                },
+                onHorizontalDragEnd: (details) {
+                  setState(() => _isSeeking = false);
+                  // 拖动结束后恢复播放状态（如果之前是播放中）
+                  if (ctrl.value.isPlaying || _isSeeking) {
+                    ctrl.play();
+                  }
+                },
+                child: Container(
+                  height: 20,
+                  alignment: Alignment.centerLeft,
+                  child: Stack(
+                    children: [
+                      // 背景
+                      Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white12,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      // 缓冲进度
+                      if (ctrl.value.isInitialized && ctrl.value.duration.inMilliseconds > 0)
+                        FractionallySizedBox(
+                          widthFactor: (ctrl.value.buffered.isNotEmpty
+                                  ? ctrl.value.buffered.last.end.inMilliseconds
+                                  : 0) /
+                              ctrl.value.duration.inMilliseconds.clamp(1, double.infinity),
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white30,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      // 播放进度
+                      if (ctrl.value.isInitialized && ctrl.value.duration.inMilliseconds > 0)
+                        FractionallySizedBox(
+                          widthFactor: ctrl.value.position.inMilliseconds /
+                              ctrl.value.duration.inMilliseconds.clamp(1, double.infinity),
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: scheme.primary,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
                 colors: VideoProgressColors(
                   playedColor: scheme.primary,
                   bufferedColor: Colors.white30,
@@ -578,7 +680,34 @@ class _PlayerPageState extends State<PlayerPage> {
                     _fmt(ctrl.value.position),
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
-                  const Spacer(),
+                                    const Spacer(),
+                  // 倍速选择
+                  PopupMenuButton<double>(
+                    initialValue: _playbackSpeed,
+                    onSelected: (speed) async {
+                      setState(() => _playbackSpeed = speed);
+                      await ctrl.setPlaybackSpeed(speed);
+                    },
+                    itemBuilder: (context) => [
+                      for (final speed in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
+                        PopupMenuItem(
+                          value: speed,
+                          child: Text(
+                            '${speed}x',
+                            style: TextStyle(
+                              fontWeight: speed == _playbackSpeed 
+                                  ? FontWeight.bold 
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                    ],
+                    icon: Text(
+                      '${_playbackSpeed}x',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    color: Colors.black87,
+                  ),
                   Text(
                     _fmt(ctrl.value.duration),
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -607,3 +736,4 @@ class _PlayerPageState extends State<PlayerPage> {
     return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
   }
 }
+

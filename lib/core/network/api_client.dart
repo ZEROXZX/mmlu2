@@ -43,6 +43,7 @@ class ApiErrorInterceptor extends Interceptor {
   ApiErrorInterceptor(this.apiKey, {this.onAccountConflict});
 
   final String apiKey;
+  final Future<void> Function()? onAccountConflict;
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
@@ -165,6 +166,7 @@ class ApiClient {
   final TokenStore tokenStore;
   final DomainStore domainStore;
   final String apiKey;
+  final Future<void> Function()? onAccountConflict;
   final String secureKey;
   late final Dio dio;
 
