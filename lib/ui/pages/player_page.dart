@@ -264,7 +264,6 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   List<Widget> _overlay(VideoPlayerController ctrl) {
-    final scheme = Theme.of(context).colorScheme;
     return [
       Positioned(
         top: 0,
@@ -365,7 +364,7 @@ class _PlayerPageState extends State<PlayerPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              VideoProgressIndicator(ctrl, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 4), colors: VideoProgressColors(playedColor: scheme.primary, bufferedColor: Colors.white30, backgroundColor: Colors.white12)),
+              VideoProgressIndicator(ctrl, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 4), colors: VideoProgressColors(playedColor: Theme.of(context).colorScheme.primary, bufferedColor: Colors.white30, backgroundColor: Colors.white12)),
               Row(
                 children: [
                   IconButton(icon: Icon(ctrl.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white), onPressed: _togglePlay),
