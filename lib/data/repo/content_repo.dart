@@ -233,6 +233,19 @@ class ContentRepo {
       }
       return merged.values.toList();
     }
+    if (kind == ContentKind.comicAv || kind == ContentKind.comicNs) {
+      // 某些情况下漫画收藏也可能分页不全，尝试多页获取
+      final all = <String, ContentItem>{};
+      for (var p = 1; p <= 10; p++) {
+        final res = await _api.favorites(kind.tag, pages: p, counts: 50);
+        final items = _parseItems(kind, res);
+        for (final it in items) {
+          all['${it.id}:${it.source ?? kind.tag}'] = it;
+        }
+        if (items.isEmpty || items.length < 50) break;
+      }
+      return all.values.toList();
+    }
     final res = await _api.favorites(kind.tag, pages: pages, counts: counts);
     return _parseItems(kind, res);
   }

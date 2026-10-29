@@ -11,8 +11,9 @@ Future<void> showDownloadLinks(
   String? key,
   String? decrypted,
   String emptyHint = '暂无可用链接（开始下载后可获取）',
+  List<ImageLinkItem>? imageLinks,
 }) {
-  final hasAny =
+  final hasAny = imageLinks?.isNotEmpty == true ||
       [encrypted, key, decrypted].any((v) => v != null && v.isNotEmpty);
   return showDialog<void>(
     context: context,
@@ -26,7 +27,10 @@ Future<void> showDownloadLinks(
             if (!hasAny)
               Text(emptyHint,
                   style: const TextStyle(fontSize: 13, color: Colors.grey))
-            else ...[
+            else if (imageLinks != null && imageLinks.isNotEmpty) ...[
+              for (final item in imageLinks)
+                _imageLinkItem(ctx, item),
+            ] else ...[
               _link(ctx, '加密链接', encrypted),
               _link(ctx, '解密密钥链接', key),
               _link(ctx, '解密后链接', decrypted),
@@ -35,7 +39,20 @@ Future<void> showDownloadLinks(
         ),
       ),
       actions: [
-        if (hasAny)
+        if (imageLinks != null && imageLinks.isNotEmpty)
+          TextButton(
+            onPressed: () {
+              final all = <String>[
+                for (final item in imageLinks)
+                  '图${item.index}: ${item.url}\nkey: ${item.key ?? ''} iv: ${item.iv ?? ''}',
+              ].join('\n\n');
+              Clipboard.setData(ClipboardData(text: all));
+              ScaffoldMessenger.of(ctx)
+                  .showSnackBar(const SnackBar(content: Text('已复制全部')));
+            },
+            child: const Text('复制全部'),
+          )
+        else if (hasAny)
           TextButton(
             onPressed: () {
               final all = <String>[
@@ -53,6 +70,43 @@ Future<void> showDownloadLinks(
           ),
         TextButton(
             onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+      ],
+    ),
+  );
+}
+
+class ImageLinkItem {
+  const ImageLinkItem({required this.index, required this.url, this.key, this.iv});
+  final int index;
+  final String url;
+  final String? key;
+  final String? iv;
+}
+
+Widget _imageLinkItem(BuildContext context, ImageLinkItem item) {
+  final text = '图${item.index}: ${item.url}\nkey: ${item.key ?? ''}\niv: ${item.iv ?? ''}';
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('图片 ${item.index}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 18),
+              tooltip: '复制此图链接+密钥',
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('已复制')));
+              },
+            ),
+          ],
+        ),
+        SelectableText(text, style: const TextStyle(fontSize: 11)),
+        const Divider(),
       ],
     ),
   );
