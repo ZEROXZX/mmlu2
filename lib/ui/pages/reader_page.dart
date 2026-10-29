@@ -170,7 +170,12 @@ class _FictionViewerState extends State<_FictionViewer> {
 
   Future<void> _showBookmarksF() async {
     _prefs ??= await SharedPreferences.getInstance();
-    final list = List<String>.from(_prefs?.getStringList('fiction_bm_list') ?? []);
+    final all = List<String>.from(_prefs?.getStringList('fiction_bm_list') ?? []);
+    final list = all.where((e){
+      final p = e.split('|');
+      if (p.length < 4) return false;
+      return p[0]=='f' && p[1]==widget.item.id.toString() && p[2]==(widget.chapterId??0).toString();
+    }).toList();
     if (!mounted) return;
     showDialog(
       context: context,
@@ -192,8 +197,9 @@ class _FictionViewerState extends State<_FictionViewer> {
               setState(()=>_showBar=false);
             },
             trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
-              final nl=List<String>.from(list)..removeAt(i);
-              await _prefs?.setStringList('fiction_bm_list', nl);
+              final all=List<String>.from(_prefs?.getStringList('fiction_bm_list')??[]);
+              all.remove(e);
+              await _prefs?.setStringList('fiction_bm_list', all);
               if (ctx.mounted) Navigator.pop(ctx);
               if (mounted) _showBookmarksF();
             }),
@@ -391,7 +397,12 @@ class _PageViewerState extends State<_PageViewer> {
 
   Future<void> _showBookmarksC() async {
     _prefs ??= await SharedPreferences.getInstance();
-    final list = List<String>.from(_prefs?.getStringList('comic_bm_list') ?? []);
+    final all = List<String>.from(_prefs?.getStringList('comic_bm_list') ?? []);
+    final list = all.where((e){
+      final p = e.split('|');
+      if (p.length < 5) return false;
+      return p[0]=='c' && p[1]==widget.kind.tag && p[2]==widget.pages.length.toString();
+    }).toList();
     if (!mounted) return;
     showDialog(
       context: context,
@@ -413,8 +424,9 @@ class _PageViewerState extends State<_PageViewer> {
               setState(()=>_showBar=false);
             },
             trailing: IconButton(icon: const Icon(Icons.delete), onPressed: () async {
-              final nl=List<String>.from(list)..removeAt(i);
-              await _prefs?.setStringList('comic_bm_list', nl);
+              final all=List<String>.from(_prefs?.getStringList('comic_bm_list')??[]);
+              all.remove(e);
+              await _prefs?.setStringList('comic_bm_list', all);
               if (ctx.mounted) Navigator.pop(ctx);
               if (mounted) _showBookmarksC();
             }),
