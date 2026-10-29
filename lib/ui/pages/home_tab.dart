@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
 import '../../data/models/content.dart';
-import '../widgets/banner_carousel.dart';
 import '../widgets/content_tile.dart';
 import 'content_list_page.dart';
 import 'detail_page.dart';
@@ -24,7 +23,7 @@ class HomeTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       children: [
-        const BannerCarousel(),
+        // BannerCarousel removed per request
         for (final k in _kinds) _Section(kind: k),
       ],
     );

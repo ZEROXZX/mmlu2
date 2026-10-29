@@ -228,7 +228,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
       case DownloadStatus.failed:
       case DownloadStatus.cancelled:
         return [
-          if (t.canRetry)
+          if (t.canRetry || true)
             btn(Icons.refresh, '重试', () => mgr.retry(t)),
           btn(Icons.delete_outline, '删除记录（保留文件）', () => mgr.remove(t)),
         ];

@@ -10,6 +10,7 @@ class TokenStore {
   TokenStore(this._prefs);
 
   final SharedPreferences _prefs;
+  SharedPreferences get rawPrefs => _prefs;
 
   static const String _prefsName = '17memie';
   static const String _tokenKey = 'pref_app_token';

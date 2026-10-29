@@ -97,61 +97,79 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              DropdownButton<ContentKind>(
-                value: _kind,
-                onChanged: (k) => setState(() => _kind = k ?? _kind),
-                // 图集无搜索接口（v2/v3/search/*/photo 均 404），故不提供。
-                items: [
-                  for (final k in ContentKind.values)
-                    if (k != ContentKind.photo)
-                      DropdownMenuItem(value: k, child: Text(k.label)),
+    return Scaffold(
+      appBar: AppBar(title: const Text('搜索')),
+      body: PopScope(
+        canPop: _query == null,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          if (_query != null) {
+            setState(() => _query = null);
+          }
+        },
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  DropdownButton<ContentKind>(
+                    value: _kind,
+                    onChanged: (k) => setState(() => _kind = k ?? _kind),
+                    // 图集无搜索接口（v2/v3/search/*/photo 均 404），故不提供。
+                    items: [
+                      for (final k in ContentKind.values)
+                        if (k != ContentKind.photo)
+                          DropdownMenuItem(value: k, child: Text(k.label)),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _kw,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _run(),
+                      decoration: const InputDecoration(
+                        hintText: '输入关键词',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(onPressed: _run, child: const Text('搜索')),
                 ],
               ),
-              const SizedBox(width: 8),
+            ),
+            if (_query == null && _history.isNotEmpty)
               Expanded(
-                child: TextField(
-                  controller: _kw,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _run(),
-                  decoration: const InputDecoration(
-                    hintText: '输入关键词',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
+                child: SingleChildScrollView(
+                  child: _historyBar(),
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton(onPressed: _run, child: const Text('搜索')),
-            ],
-          ),
+            if (_query != null)
+              Expanded(
+                child: PaginatedContentList(
+                    // 关键词或种类变化时重建，重新从第 1 页开始。
+                    key: ValueKey('${_kind.tag}:$_query'),
+                    loader: (page) => context
+                        .read<AppContainer>()
+                        .contentRepo
+                        .search(_kind, _query!, pages: page),
+                    onTap: (it) => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => DetailPage(
+                          kind: it.kind,
+                          id: it.id,
+                          title: it.title,
+                          source: it.source),
+                    )),
+                  ),
+              )
+            else if (_query == null && _history.isEmpty)
+              const Expanded(child: EmptyView(text: '输入关键词开始搜索')),
+          ],
         ),
-        if (_query == null && _history.isNotEmpty) _historyBar(),
-        Expanded(
-          child: _query == null
-              ? const EmptyView(text: '输入关键词开始搜索')
-              : PaginatedContentList(
-                  // 关键词或种类变化时重建，重新从第 1 页开始。
-                  key: ValueKey('${_kind.tag}:$_query'),
-                  loader: (page) => context
-                      .read<AppContainer>()
-                      .contentRepo
-                      .search(_kind, _query!, pages: page),
-                  onTap: (it) => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => DetailPage(
-                        kind: it.kind,
-                        id: it.id,
-                        title: it.title,
-                        source: it.source),
-                  )),
-                ),
-        ),
-      ],
+      ),
     );
   }
 }

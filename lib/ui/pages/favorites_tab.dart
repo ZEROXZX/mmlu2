@@ -3,10 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
 import '../../data/models/content.dart';
-import '../widgets/paginated_content.dart';
+import '../widgets/async_view.dart';
+import '../widgets/content_tile.dart';
 import 'detail_page.dart';
 
-/// 收藏：按内容种类查看收藏列表（支持分页加载）。
+/// 收藏：按内容种类查看收藏列表。
 class FavoritesTab extends StatefulWidget {
   const FavoritesTab({super.key});
 
@@ -22,18 +23,31 @@ class _FavoritesTabState extends State<FavoritesTab> {
     ContentKind.fiction,
   ];
   ContentKind _kind = ContentKind.animat;
+  late Future<List<ContentItem>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<ContentItem>> _load() =>
+      context.read<AppContainer>().contentRepo.favorites(_kind);
+
+  Future<void> _reload() async {
+    final f = _load();
+    setState(() => _future = f);
+    try {
+      await f;
+    } catch (_) {}
+  }
 
   Future<void> _open(ContentItem it) async {
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => DetailPage(
-        kind: it.kind,
-        id: it.id,
-        title: it.title,
-        source: it.source,
-      ),
+      builder: (_) => DetailPage(kind: it.kind, id: it.id, title: it.title, source: it.source),
     ));
-    // 详情页里可能取消了收藏，返回后刷新列表
-    if (mounted) setState(() {});
+    // 详情页里可能取消了收藏，返回后刷新列表。
+    if (mounted) await _reload();
   }
 
   @override
@@ -49,20 +63,26 @@ class _FavoritesTabState extends State<FavoritesTab> {
                 ChoiceChip(
                   label: Text(k.label),
                   selected: _kind == k,
-                  onSelected: (_) => setState(() => _kind = k),
+                  onSelected: (_) => setState(() {
+                    _kind = k;
+                    _future = _load();
+                  }),
                 ),
             ],
           ),
         ),
         Expanded(
-          child: PaginatedContentList(
-            key: ValueKey(_kind),
-            loader: (page) => context
-                .read<AppContainer>()
-                .contentRepo
-                .favorites(_kind, pages: page),
-            onTap: _open,
-            emptyText: '暂无收藏',
+          child: AsyncView<List<ContentItem>>(
+            future: _future,
+            onRetry: () => setState(() => _future = _load()),
+            empty: const EmptyView(text: '暂无收藏'),
+            builder: (context, items) => RefreshIndicator(
+              onRefresh: _reload,
+              child: ContentGrid(
+                items: items,
+                onTap: _open,
+              ),
+            ),
           ),
         ),
       ],
