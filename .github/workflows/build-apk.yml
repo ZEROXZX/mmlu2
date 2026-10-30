@@ -67,12 +67,10 @@
           mkdir -p android/app
           printf "%s" "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/mmlu.jks
           chmod 600 android/app/mmlu.jks
-          cat <<'EOF' > android/app/key.properties
-storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-keyPassword=${{ secrets.KEY_PASSWORD }}
-keyAlias=${{ secrets.KEY_ALIAS }}
-storeFile=mmlu.jks
-EOF
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/app/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/app/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/app/key.properties
+          echo "storeFile=mmlu.jks" >> android/app/key.properties
           chmod 600 android/app/key.properties
           ls -la android/app/
 
