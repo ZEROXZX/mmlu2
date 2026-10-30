@@ -85,6 +85,12 @@ class DownloadService {
       if (dir == 'download') {
         final pub = await NativeBridge.publicDir('Download', 'mmlu');
         if (pub != null) return _ensure(Directory(pub));
+        // fallback
+        final d = Directory('/storage/emulated/0/Download/mmlu');
+        try {
+          if (!d.existsSync()) d.createSync(recursive: true);
+          return d;
+        } catch (_) {}
       } else {
         final candidates = [
           '/data/user/0/com.zero.mmlu',
