@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
-import 'account_page.dart';
-import 'history_page.dart';
 import 'home_shell.dart';
 
 class OldLoginPage extends StatefulWidget {
@@ -44,27 +42,6 @@ class _OldLoginPageState extends State<OldLoginPage> {
           TextField(controller: _p, decoration: const InputDecoration(labelText: '密码'), obscureText: true),
           const SizedBox(height: 12),
           ElevatedButton(onPressed: _loading?null:_login, child: Text(_loading?'登录中...':'登录')),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('网络设置'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('历史记录'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoryPage()),
-              );
-            },
-          ),
         ],
       ),
     );

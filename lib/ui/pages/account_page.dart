@@ -3,10 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
 import '../../core/network/http_factory.dart';
-import 'history_page.dart';
 import 'old_login_page.dart';
 
-/// 账号页：网络设置 + 历史记录（原账号登录入口已移到注册页右上角）
+/// 账号页：网络设置
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
 
@@ -15,7 +14,6 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-
   Future<void> _openNetworkSettings() async {
     final c = context.read<AppContainer>();
     final proxyCtrl =
@@ -87,20 +85,12 @@ class _AccountPageState extends State<AccountPage> {
       body: ListView(
         children: [
           _networkTile(c),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('观看历史'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const HistoryPage()),
-            ),
-          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.account_circle_outlined),
             title: const Text('原账号登录（走原APP API）'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
+            onTap: () => Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (_) => const OldLoginPage()),
             ),
           ),
