@@ -45,6 +45,10 @@ android {
     }
 }
 
+dependencies {
+    implementation(files("libs/library-release.aar"))
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
