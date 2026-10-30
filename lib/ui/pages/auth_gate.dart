@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/auth/auth_store.dart';
+import '../../core/auth/token_store.dart';
 import '../../core/network/auth_api.dart';
 import 'home_shell.dart';
 import 'register_page.dart';
@@ -25,18 +26,27 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _check() async {
     final prefs = await SharedPreferences.getInstance();
-    final store = AuthStore(prefs);
-    if (!store.isLoggedIn) {
+    final newStore = AuthStore(prefs);
+    final oldStore = TokenStore(prefs);
+
+    // 原账号已登录，直接放行
+    if (oldStore.isLoggedIn && oldStore.token != null && oldStore.token!.isNotEmpty) {
+      if (mounted) Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeShell()));
+      return;
+    }
+
+    // 新自建账号登录校验
+    if (!newStore.isLoggedIn) {
       if (mounted) Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const RegisterPage()));
       return;
     }
     final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 8), receiveTimeout: const Duration(seconds: 8)));
-    dio.options.headers['Authorization'] = 'Bearer ${store.token}';
+    dio.options.headers['Authorization'] = 'Bearer ${newStore.token}';
     final api = AuthApi(dio, 'http://127.0.0.1:8090');
     try {
       final r = await api.me();
       final user = r['user'];
-      await store.save(token: store.token!, user: Map<String,dynamic>.from(user), tv: user['token_version']);
+      await newStore.save(token: newStore.token!, user: Map<String,dynamic>.from(user), tv: user['token_version']);
       if (mounted) Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeShell()));
     } catch (e) {
       if (e is DioException) {
