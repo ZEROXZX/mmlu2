@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../app/app_container.dart';
 import '../../core/network/http_factory.dart';
-import '../../data/models/user_info_response.dart';
-import '../widgets/async_view.dart';
 import 'history_page.dart';
 import 'old_login_page.dart';
 
@@ -17,7 +15,6 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  bool _busy = false;
 
   Future<void> _openNetworkSettings() async {
     final c = context.read<AppContainer>();
