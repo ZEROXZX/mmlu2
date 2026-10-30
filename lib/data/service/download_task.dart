@@ -131,7 +131,32 @@ class DownloadManager extends ChangeNotifier {
     this.tokenStore,
     DownloadRunner? runner,
   }) : _runner = runner {
-    _checkExpired();
+    Future.microtask(() async {
+      try {
+        final enable = await (tokenStore?.getAutoDelete12h() ?? Future.value(true));
+        if (!enable) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final all = store.load();
+        final remove = <String>[];
+        for (final r in all) {
+          if (r.status == 'done' || r.status == 'failed' || r.status == 'cancelled') {
+            final end = r.createdAt;
+            if (end > 0 && now - end > 12 * 60 * 60 * 1000) {
+              remove.add(r.id);
+              try {
+                if (r.filePath.isNotEmpty) {
+                  final f = File(r.filePath);
+                  if (f.existsSync()) f.deleteSync();
+                }
+              } catch (_) {}
+            }
+          }
+        }
+        if (remove.isNotEmpty) {
+          await store.removeMany(remove);
+        }
+      } catch (_) {}
+    });
   }
 
   final StreamService streams;
