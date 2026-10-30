@@ -1,24 +1,8 @@
-name: Build Android + Windows
-
-on:
-  push:
-    branches: [ main ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
-
-env:
-  FLUTTER_CHANNEL: stable
-
-jobs:
   build-android:
     runs-on: ubuntu-latest
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       GRADLE_OPTS: "-Dorg.gradle.vfs.watch=false -Dorg.gradle.internal.network.retry.max-attempts=5 -Dorg.gradle.internal.network.retry.delay=3000 -Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000"
-      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,7 +35,6 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            .gradle
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*','**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
@@ -72,23 +55,33 @@ jobs:
         continue-on-error: true
         run: flutter test
 
+      - name: Print Android env debug
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la android/
+          ls -la android/app/
+
       - name: Prepare signing keystore
         if: env.KEYSTORE_BASE64 != ''
         run: |
-          echo "${{ env.KEYSTORE_BASE64 }}" | base64 -d > android/app/mmlu.jks
-          cat > android/app/key.properties << EOF
+          mkdir -p android/app
+          printf "%s" "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/mmlu.jks
+          chmod 600 android/app/mmlu.jks
+          cat <<'EOF' > android/app/key.properties
 storePassword=${{ secrets.KEYSTORE_PASSWORD }}
 keyPassword=${{ secrets.KEY_PASSWORD }}
 keyAlias=${{ secrets.KEY_ALIAS }}
 storeFile=mmlu.jks
 EOF
+          chmod 600 android/app/key.properties
+          ls -la android/app/
 
       - name: Build Android Release APK arm64
-        run: flutter build apk --release --target-platform=android-arm64
+        run: flutter build apk --release --target-platform=android-arm64 --verbose
 
       - name: Build Android Release APK universal
         continue-on-error: true
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       - name: Rename APKs
         run: |
@@ -102,74 +95,3 @@ EOF
           name: android-apk
           path: outputs/*.apk
           if-no-files-found: error
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Flutter Windows
-        uses: subosito/flutter-action@v2
-        with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
-          cache: true
-
-      - name: Cache Pub
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.PUB_CACHE }}
-          key: pub-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            pub-${{ runner.os }}-
-
-      - name: Flutter version
-        run: flutter --version
-
-      - name: Flutter clean
-        run: flutter clean
-
-      - name: Flutter pub get
-        run: flutter pub get
-
-      - name: Build Windows Release
-        run: flutter build windows --release
-
-      - name: Zip Windows build
-        shell: pwsh
-        run: |
-          $src = "build/windows/x64/runner/Release"
-          if (Test-Path $src) {
-            Compress-Archive -Path "$src/*" -DestinationPath "build/windows-release.zip" -Force
-          } else {
-            $src2 = "build/windows/runner/Release"
-            Compress-Archive -Path "$src2/*" -DestinationPath "build/windows-release.zip" -Force
-          }
-
-      - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: build/windows-release.zip
-          if-no-files-found: error
-
-  release:
-    needs: [build-android, build-windows]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Release to GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            android-apk/*.apk
-            windows-build/*.zip
-          draft: false
-          prerelease: false
