@@ -66,7 +66,7 @@ class AppContainer {
     final resources = ResourceService(domainStore);
     final streams = StreamService(domains: domainStore, tokenStore: tokenStore);
     final downloadStore = DownloadStore(prefs);
-    final downloads = DownloadService();
+    final downloads = DownloadService(tokenStore: tokenStore);
     final downloadManager = DownloadManager(
       streams: streams,
       resources: resources,

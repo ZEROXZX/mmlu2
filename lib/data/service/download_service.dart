@@ -63,22 +63,17 @@ class Mp4Converter {
 /// 任务编排（进度/暂停/恢复/取消/并发）在 `DownloadManager`；
 /// 这里只提供无状态的原子能力。
 class DownloadService {
-  DownloadService({Mp4Converter? converter, Future<Directory> Function()? rootOverride})
+  DownloadService({Mp4Converter? converter, Future<Directory> Function()? rootOverride, this.tokenStore})
       : converter = converter ?? Mp4Converter(),
         _rootOverride = rootOverride;
 
   final Mp4Converter converter;
   final Future<Directory> Function()? _rootOverride;
+  final TokenStore? tokenStore;
 
   /// 下载根目录。
   Future<Directory> rootDir({TokenStore? tokenStore}) async {
-    // always read latest
-    TokenStore? ts = tokenStore;
-    if (ts == null) {
-      try {
-        // try to get from container not available; but keep
-      } catch (_) {}
-    }
+    TokenStore? ts = tokenStore ?? this.tokenStore;
     final override = _rootOverride;
     if (override != null) {
       final base = await override();
@@ -92,14 +87,24 @@ class DownloadService {
         dir = await tokenStore.getDownloadDir();
       }
       if (dir == 'download') {
-        final pub = await NativeBridge.publicDir('Download', 'mmlu');
-        if (pub != null) return _ensure(Directory(pub));
-        // fallback
+        try {
+          final pub = await NativeBridge.publicDir('Download', 'mmlu');
+          if (pub != null && pub.isNotEmpty) return _ensure(Directory(pub));
+        } catch (_) {}
         final d = Directory('/storage/emulated/0/Download/mmlu');
         try {
           if (!d.existsSync()) d.createSync(recursive: true);
           return d;
         } catch (_) {}
+        // last resort
+        final base = await getExternalStorageDirectory();
+        if (base != null) {
+          final d2 = Directory(p.join(base.path, '..', '..', '..', '..', 'Download', 'mmlu'));
+          try {
+            if (!d2.existsSync()) d2.createSync(recursive: true);
+            return d2;
+          } catch (_) {}
+        }
       } else {
         final candidates = [
           '/data/user/0/com.zero.mmlu',
