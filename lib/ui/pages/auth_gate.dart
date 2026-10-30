@@ -17,7 +17,7 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  bool _loading = false;
+  bool _loading = true;
 
   @override
   void initState() {
