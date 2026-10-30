@@ -2,11 +2,13 @@ name: Build Android + Windows
 
 on:
   push:
-    branches: [ main ]
-  tags:
-    - 'v*'
+    branches:
+      - main
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 env:
@@ -172,10 +174,4 @@ jobs:
         uses: actions/download-artifact@v4
 
       - name: Release to GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            android-apk/*.apk
-            windows-build/*.zip
-          draft: false
-          prerelease: false
+      
