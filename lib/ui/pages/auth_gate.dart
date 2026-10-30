@@ -17,8 +17,6 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  bool _loading = true;
-
   @override
   void initState() {
     super.initState();
@@ -48,10 +46,7 @@ class _AuthGateState extends State<AuthGate> {
           return;
         }
       }
-      // timeout or other -> try to go home? but must enforce; go to register
       if (mounted) Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const RegisterPage()));
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
