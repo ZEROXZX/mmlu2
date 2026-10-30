@@ -73,6 +73,7 @@ class AppContainer {
       store: downloadStore,
       service: downloads,
       prefs: prefs,
+      tokenStore: tokenStore,
     );
     return AppContainer._(
       prefs: prefs,
