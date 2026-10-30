@@ -1,3 +1,18 @@
+name: Build Android + Windows
+
+on:
+  push:
+    branches: [ main ]
+  tags:
+    - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  FLUTTER_CHANNEL: stable
+
+jobs:
   build-android:
     runs-on: ubuntu-latest
     env:
@@ -93,3 +108,74 @@
           name: android-apk
           path: outputs/*.apk
           if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter Windows
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Cache Pub
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PUB_CACHE }}
+          key: pub-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            pub-${{ runner.os }}-
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Flutter clean
+        run: flutter clean
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          $src = "build/windows/x64/runner/Release"
+          if (Test-Path $src) {
+            Compress-Archive -Path "$src/*" -DestinationPath "build/windows-release.zip" -Force
+          } else {
+            $src2 = "build/windows/runner/Release"
+            Compress-Archive -Path "$src2/*" -DestinationPath "build/windows-release.zip" -Force
+          }
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: build/windows-release.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build-android, build-windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            android-apk/*.apk
+            windows-build/*.zip
+          draft: false
+          prerelease: false
