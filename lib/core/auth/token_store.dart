@@ -70,26 +70,29 @@ class TokenStore {
   }
 
   Future<bool> getPrivacyBlockShot() async {
-    return _prefs.getBool('privacy_block_shot') ?? true;
+    return _prefs.getBool('privacy_block_shot') ?? _prefs.getBool('flutter.privacy_block_shot') ?? true;
   }
 
   Future<void> setPrivacyBlockShot(bool v) async {
     await _prefs.setBool('privacy_block_shot', v);
+    await _prefs.setBool('flutter.privacy_block_shot', v);
   }
 
   Future<String> getDownloadDir() async {
-    return _prefs.getString('download_dir') ?? 'root_app';
+    return _prefs.getString('download_dir') ?? _prefs.getString('flutter.download_dir') ?? 'root_app';
   }
 
   Future<void> setDownloadDir(String v) async {
     await _prefs.setString('download_dir', v);
+    await _prefs.setString('flutter.download_dir', v);
   }
 
   Future<bool> getAutoDelete12h() async {
-    return _prefs.getBool('auto_delete_12h') ?? true;
+    return _prefs.getBool('auto_delete_12h') ?? _prefs.getBool('flutter.auto_delete_12h') ?? true;
   }
 
   Future<void> setAutoDelete12h(bool v) async {
     await _prefs.setBool('auto_delete_12h', v);
+    await _prefs.setBool('flutter.auto_delete_12h', v);
   }
 }

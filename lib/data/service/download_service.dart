@@ -20,7 +20,7 @@ class Mp4Converter {
     try {
       // Try multiple common locations and commands (bundle jniLibs -> lib/..., or system)
       final candidates = <String>[
-        '/data/data/com.example.mmlu_client/files/ffmpeg',
+        '/data/data/com.zero.mmlu/files/ffmpeg',
         ffmpegPath,
         'ffmpeg',
         '/system/bin/ffmpeg',
@@ -86,19 +86,15 @@ class DownloadService {
         final pub = await NativeBridge.publicDir('Download', 'mmlu');
         if (pub != null) return _ensure(Directory(pub));
       } else {
-        // 根目录 app 文件夹：data/data/<pkg>/app_mmlu 或使用 /storage/emulated/0/mmlu
-        final pub2 = await NativeBridge.publicDir('', 'mmlu');
-        if (pub2 != null) return _ensure(Directory(pub2));
-        // 尝试常用路径
         final candidates = [
-          '/storage/emulated/0/mmlu',
-          '/data/data/com.example.mmlu_client/mmlu',
+          '/data/user/0/com.zero.mmlu',
+          '/data/data/com.zero.mmlu',
         ];
         for (final c in candidates) {
-          final d = Directory(c);
+          final d1 = Directory(p.join(c, 'mmlu'));
           try {
-            if (!d.existsSync()) d.createSync(recursive: true);
-            return d;
+            if (!d1.existsSync()) d1.createSync(recursive: true);
+            return d1;
           } catch (_) {}
         }
       }

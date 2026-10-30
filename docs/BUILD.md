@@ -230,7 +230,7 @@ signingConfigs {
 **权限被拒 或 非 Android**：自动回退到 app 私有目录
 （`/data/user/0/<包名>/files/mmlu_downloads/`），功能照常，只是其他 App 看不到文件。
 
-> 原生实现见 `android/app/src/main/kotlin/com/example/mmlu_client/MainActivity.kt`
+> 原生实现见 `android/app/src/main/kotlin/com.zero.mmlu/MainActivity.kt`
 > （MethodChannel `mmlu/native`）；Dart 封装见 `lib/data/service/native_bridge.dart`。
 > 全部用平台原生 API，不引入任何 Flutter 插件，避免 AGP 9 兼容问题。
 

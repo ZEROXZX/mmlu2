@@ -1,4 +1,4 @@
-package com.example.mmlu_client
+package com.zero.mmlu
 
 import android.Manifest
 import android.app.Notification
@@ -27,8 +27,9 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            val sp = getSharedPreferences("17memie", android.content.Context.MODE_PRIVATE)
-            if (sp.getBoolean("privacy_block_shot", true)) {
+            val sp = getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
+            val enabled = if (sp.contains("flutter.privacy_block_shot")) sp.getBoolean("flutter.privacy_block_shot", true) else sp.getBoolean("privacy_block_shot", true)
+            if (enabled) {
                 window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
             }
         } catch (_: Exception) {}
