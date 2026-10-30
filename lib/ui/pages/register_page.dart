@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/auth/auth_store.dart';
 import '../../core/network/auth_api.dart';
-import 'login_page.dart';
 import 'old_login_page.dart';
 import 'home_shell.dart';
 
@@ -58,7 +57,7 @@ class _RegisterPageState extends State<RegisterPage> {
             TextField(controller: _p, decoration: const InputDecoration(labelText: '密码'), obscureText: true),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _loading?null:_reg, child: Text(_loading?'注册中...':'注册')),
-            TextButton(onPressed: ()=>Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage())), child: const Text('已有账号？去登录')),
+            TextButton(onPressed: ()=>Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OldLoginPage())), child: const Text('已有账号？去登录')),
           ],
         ),
       ),
