@@ -72,6 +72,13 @@ class DownloadService {
 
   /// 下载根目录。
   Future<Directory> rootDir({TokenStore? tokenStore}) async {
+    // always read latest
+    TokenStore? ts = tokenStore;
+    if (ts == null) {
+      try {
+        // try to get from container not available; but keep
+      } catch (_) {}
+    }
     final override = _rootOverride;
     if (override != null) {
       final base = await override();
@@ -79,7 +86,9 @@ class DownloadService {
     }
     if (Platform.isAndroid) {
       String dir = 'root_app';
-      if (tokenStore != null) {
+      if (ts != null) {
+        dir = await ts.getDownloadDir();
+      } else if (tokenStore != null) {
         dir = await tokenStore.getDownloadDir();
       }
       if (dir == 'download') {

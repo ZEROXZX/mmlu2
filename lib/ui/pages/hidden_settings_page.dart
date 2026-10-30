@@ -43,7 +43,7 @@ class _HiddenSettingsPageState extends State<HiddenSettingsPage> {
     await ts.setAutoDelete12h(_auto);
     await ts.setPrivacyBlockShot(_sec);
     try { await _ch.invokeMethod('applySecure', {'enabled': _sec}); } catch (_) {}
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存')));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存，重启应用后生效')));
   }
 
   @override

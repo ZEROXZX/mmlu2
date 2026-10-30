@@ -131,6 +131,7 @@ class DownloadManager extends ChangeNotifier {
     this.tokenStore,
     DownloadRunner? runner,
   }) : _runner = runner {
+    try { store.tokenStore = tokenStore; } catch (_) {}
     Future.microtask(() async {
       try {
         final enable = await (tokenStore?.getAutoDelete12h() ?? Future.value(true));
@@ -223,7 +224,7 @@ class DownloadManager extends ChangeNotifier {
     ImageScheme scheme = ImageScheme.perImage,
   }) async {
     if (pages.isEmpty) throw StateError('无图片');
-    final root = await service.rootDir(tokenStore: tokenStore);
+    final root = await service.rootDir(tokenStore: tokenStore ?? store.tokenStore);
     final dir = await service.subDir(kind.label);
     final zipPath = p.join(dir.path, '${_safeName(title, id)}.zip');
     final tmp = Directory(p.join(root.path, '.imgs_pack_$id'))..createSync(recursive: true);
@@ -468,7 +469,7 @@ class DownloadManager extends ChangeNotifier {
     final mediaPath = t.mediaPath;
     if (mediaPath == null) throw StateError('缺少 mediaPath');
     final dir = await service.subDir(t.kind.label);
-    final partDir = p.join((await service.rootDir(tokenStore: tokenStore)).path, '.parts_${t.id}');
+    final partDir = p.join((await service.rootDir(tokenStore: tokenStore ?? store.tokenStore)).path, '.parts_${t.id}');
     final m3u8Url = streams.buildM3u8Url(mediaPath);
     t.encryptedUrl = m3u8Url;
     await _upsertRecord(
@@ -570,7 +571,7 @@ class DownloadManager extends ChangeNotifier {
   Future<void> _runImages(DownloadTask t) async {
     final pages = t.pages ?? const <ReadPage>[];
     if (pages.isEmpty) throw StateError('无图片');
-    final root = await service.rootDir(tokenStore: tokenStore);
+    final root = await service.rootDir(tokenStore: tokenStore ?? store.tokenStore);
     final dir = await service.subDir(t.kind.label);
     final zipPath = p.join(dir.path,
         '${_safeName(t.title, t.id)}${t.suffix.isEmpty ? '' : '_${_safeName(t.suffix, '')}'}.zip');
@@ -829,7 +830,7 @@ class DownloadManager extends ChangeNotifier {
   // ---- 收尾工具 ------------------------------------------------------------
 
   Future<String> _partDirOf(String id) async {
-    final dir = await service.rootDir(tokenStore: tokenStore);
+    final dir = await service.rootDir(tokenStore: tokenStore ?? store.tokenStore);
     return p.join(dir.path, '.parts_$id');
   }
 

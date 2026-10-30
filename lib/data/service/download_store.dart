@@ -80,7 +80,7 @@ class DownloadStore {
   DownloadStore(this._prefs, {this.tokenStore});
 
   final SharedPreferences _prefs;
-  final TokenStore? tokenStore;
+  TokenStore? tokenStore;
   static const _key = 'download_history';
 
   List<DownloadRecord> load() {
