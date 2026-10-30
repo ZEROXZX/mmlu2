@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/auth/token_store.dart';
+
 /// 一条下载记录（R2.1 本地保存）。
 class DownloadRecord {
   DownloadRecord({
@@ -78,7 +80,6 @@ class DownloadStore {
   DownloadStore(this._prefs, {this.tokenStore});
 
   final SharedPreferences _prefs;
-  final TokenStore? tokenStore;
   final TokenStore? tokenStore;
   static const _key = 'download_history';
 

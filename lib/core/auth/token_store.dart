@@ -92,3 +92,4 @@ class TokenStore {
   Future<void> setAutoDelete12h(bool v) async {
     await _prefs.setBool('auto_delete_12h', v);
   }
+}
