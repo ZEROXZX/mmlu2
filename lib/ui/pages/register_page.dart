@@ -46,7 +46,7 @@ class _RegisterPageState extends State<RegisterPage> {
       appBar: AppBar(
         title: const Text('注册'),
         actions: [
-          IconButton(icon: const Icon(Icons.login), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OldLoginPage())), tooltip: '原账号登录'),
+          IconButton(icon: const Icon(Icons.account_circle_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OldLoginPage())), tooltip: '原账号登录'),
         ],
       ),
       body: Padding(
