@@ -75,9 +75,11 @@ class DownloadRecord {
 
 /// 下载历史存储（本地 SharedPreferences；R2.2 显示 / R2.3 选择性删除）。
 class DownloadStore {
-  DownloadStore(this._prefs);
+  DownloadStore(this._prefs, {this.tokenStore});
 
   final SharedPreferences _prefs;
+  final TokenStore? tokenStore;
+  final TokenStore? tokenStore;
   static const _key = 'download_history';
 
   List<DownloadRecord> load() {

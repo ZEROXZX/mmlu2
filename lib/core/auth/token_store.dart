@@ -68,4 +68,27 @@ class TokenStore {
     return '${h.substring(0, 8)}-${h.substring(8, 12)}-'
         '${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}';
   }
-}
+
+  Future<bool> getPrivacyBlockShot() async {
+    return _prefs.getBool('privacy_block_shot') ?? true;
+  }
+
+  Future<void> setPrivacyBlockShot(bool v) async {
+    await _prefs.setBool('privacy_block_shot', v);
+  }
+
+  Future<String> getDownloadDir() async {
+    return _prefs.getString('download_dir') ?? 'root_app';
+  }
+
+  Future<void> setDownloadDir(String v) async {
+    await _prefs.setString('download_dir', v);
+  }
+
+  Future<bool> getAutoDelete12h() async {
+    return _prefs.getBool('auto_delete_12h') ?? true;
+  }
+
+  Future<void> setAutoDelete12h(bool v) async {
+    await _prefs.setBool('auto_delete_12h', v);
+  }

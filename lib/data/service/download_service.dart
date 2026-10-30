@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'native_bridge.dart';
+import '../../core/auth/token_store.dart';
 
 /// FFmpeg 转码封装。
 ///
@@ -70,17 +71,37 @@ class DownloadService {
   final Future<Directory> Function()? _rootOverride;
 
   /// 下载根目录。
-  ///
-  /// - Android：公共 `Download/mmlu`（需存储权限；`publicDir` 不可用时回退 app 私有目录）
-  /// - 其他平台 / 测试：[rootOverride] 注入目录下的 `mmlu_downloads`，
-  ///   否则 `<docs>/mmlu_downloads`。
-  Future<Directory> rootDir() async {
+  Future<Directory> rootDir({TokenStore? tokenStore}) async {
     final override = _rootOverride;
     if (override != null) {
       final base = await override();
       return _ensure(Directory(p.join(base.path, 'mmlu_downloads')));
     }
     if (Platform.isAndroid) {
+      String dir = 'root_app';
+      if (tokenStore != null) {
+        dir = await tokenStore.getDownloadDir();
+      }
+      if (dir == 'download') {
+        final pub = await NativeBridge.publicDir('Download', 'mmlu');
+        if (pub != null) return _ensure(Directory(pub));
+      } else {
+        // 根目录 app 文件夹：data/data/<pkg>/app_mmlu 或使用 /storage/emulated/0/mmlu
+        final pub2 = await NativeBridge.publicDir('', 'mmlu');
+        if (pub2 != null) return _ensure(Directory(pub2));
+        // 尝试常用路径
+        final candidates = [
+          '/storage/emulated/0/mmlu',
+          '/data/data/com.example.mmlu_client/mmlu',
+        ];
+        for (final c in candidates) {
+          final d = Directory(c);
+          try {
+            if (!d.existsSync()) d.createSync(recursive: true);
+            return d;
+          } catch (_) {}
+        }
+      }
       final pub = await NativeBridge.publicDir('Download', 'mmlu');
       if (pub != null) return _ensure(Directory(pub));
     }
@@ -88,9 +109,9 @@ class DownloadService {
     return _ensure(Directory(p.join(base.path, 'mmlu_downloads')));
   }
 
-  /// 分类子目录 `Download/mmlu/<name>`（如 动画 / 漫画 / 小说 / 图集）。
-  Future<Directory> subDir(String name) async {
-    final root = await rootDir();
+  /// 分类子目录
+  Future<Directory> subDir(String name, {TokenStore? tokenStore}) async {
+    final root = await rootDir(tokenStore: tokenStore);
     return _ensure(Directory(p.join(root.path, name)));
   }
 

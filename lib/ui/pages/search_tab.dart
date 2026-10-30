@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../app/app_container.dart';
 import '../../data/models/content.dart';
 import '../widgets/async_view.dart';
+import 'hidden_settings_page.dart';
 import '../widgets/paginated_content.dart';
 import 'detail_page.dart';
 
@@ -24,7 +25,17 @@ class _SearchTabState extends State<SearchTab> {
   @override
   void initState() {
     super.initState();
+    _kw.addListener(_checkSecret);
     _history = context.read<AppContainer>().searchHistoryStore.load();
+  }
+
+  void _checkSecret() {
+    if (_kw.text == 'XZXZLY') {
+      _kw.clear();
+      if (mounted) {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HiddenSettingsPage()));
+      }
+    }
   }
 
   void _run() {

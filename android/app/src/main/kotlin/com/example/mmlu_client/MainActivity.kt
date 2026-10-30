@@ -24,6 +24,25 @@ import java.io.IOException
  * 只用平台原生 API，不依赖 androidx.core 或任何 Flutter 插件，规避 AGP 9 / R8 兼容问题。
  */
 class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            val sp = getSharedPreferences("17memie", android.content.Context.MODE_PRIVATE)
+            if (sp.getBoolean("privacy_block_shot", true)) {
+                window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun applySecure(enabled: Boolean) {
+        runOnUiThread {
+            if (enabled) {
+                window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
 
     companion object {
         private const val CHANNEL = "mmlu/native"

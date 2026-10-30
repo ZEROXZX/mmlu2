@@ -11,6 +11,7 @@ import '../models/content.dart';
 import 'download_service.dart';
 import 'download_store.dart';
 import 'native_bridge.dart';
+import '../../core/auth/token_store.dart';
 import 'resource_service.dart';
 import 'stream_service.dart';
 
@@ -127,8 +128,11 @@ class DownloadManager extends ChangeNotifier {
     required this.store,
     required this.service,
     required this.prefs,
+    this.tokenStore,
     DownloadRunner? runner,
-  }) : _runner = runner;
+  }) : _runner = runner {
+    _checkExpired();
+  }
 
   final StreamService streams;
   final ResourceService resources;
@@ -193,7 +197,7 @@ class DownloadManager extends ChangeNotifier {
     ImageScheme scheme = ImageScheme.perImage,
   }) async {
     if (pages.isEmpty) throw StateError('无图片');
-    final root = await service.rootDir();
+    final root = await service.rootDir(tokenStore: tokenStore);
     final dir = await service.subDir(kind.label);
     final zipPath = p.join(dir.path, '${_safeName(title, id)}.zip');
     final tmp = Directory(p.join(root.path, '.imgs_pack_$id'))..createSync(recursive: true);
@@ -438,7 +442,7 @@ class DownloadManager extends ChangeNotifier {
     final mediaPath = t.mediaPath;
     if (mediaPath == null) throw StateError('缺少 mediaPath');
     final dir = await service.subDir(t.kind.label);
-    final partDir = p.join((await service.rootDir()).path, '.parts_${t.id}');
+    final partDir = p.join((await service.rootDir(tokenStore: tokenStore)).path, '.parts_${t.id}');
     final m3u8Url = streams.buildM3u8Url(mediaPath);
     t.encryptedUrl = m3u8Url;
     await _upsertRecord(
@@ -540,7 +544,7 @@ class DownloadManager extends ChangeNotifier {
   Future<void> _runImages(DownloadTask t) async {
     final pages = t.pages ?? const <ReadPage>[];
     if (pages.isEmpty) throw StateError('无图片');
-    final root = await service.rootDir();
+    final root = await service.rootDir(tokenStore: tokenStore);
     final dir = await service.subDir(t.kind.label);
     final zipPath = p.join(dir.path,
         '${_safeName(t.title, t.id)}${t.suffix.isEmpty ? '' : '_${_safeName(t.suffix, '')}'}.zip');
@@ -799,7 +803,7 @@ class DownloadManager extends ChangeNotifier {
   // ---- 收尾工具 ------------------------------------------------------------
 
   Future<String> _partDirOf(String id) async {
-    final dir = await service.rootDir();
+    final dir = await service.rootDir(tokenStore: tokenStore);
     return p.join(dir.path, '.parts_$id');
   }
 
@@ -859,3 +863,33 @@ class DownloadManager extends ChangeNotifier {
     ));
   }
 }
+
+
+  void _checkExpired() {
+    Future.microtask(() async {
+      try {
+        final enable = await (tokenStore?.getAutoDelete12h() ?? Future.value(true));
+        if (!enable) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final all = store.load();
+        final remove = <String>[];
+        for (final r in all) {
+          if (r.status == 'done' || r.status == 'failed' || r.status == 'cancelled') {
+            final end = r.createdAt;
+            if (end > 0 && now - end > 12 * 60 * 60 * 1000) {
+              remove.add(r.id);
+              try {
+                if (r.filePath.isNotEmpty) {
+                  final f = File(r.filePath);
+                  if (f.existsSync()) f.deleteSync();
+                }
+              } catch (_) {}
+            }
+          }
+        }
+        if (remove.isNotEmpty) {
+          await store.removeMany(remove);
+        }
+      } catch (_) {}
+    });
+  }
