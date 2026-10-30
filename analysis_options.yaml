@@ -3,6 +3,9 @@ analyzer:
     - build/**
     - android/**
     - windows/**
+  errors:
+    deprecated_member_use: error
+
 include: package:flutter_lints/flutter.yaml
 
 linter:

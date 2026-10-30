@@ -54,8 +54,18 @@ class _HiddenSettingsPageState extends State<HiddenSettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text('下载目录', style: TextStyle(fontWeight: FontWeight.bold)),
-          RadioListTile<String>(title: const Text('根目录 app/mmlu（data目录中的app文件夹）'), value: 'root_app', groupValue: _dir, onChanged: (v){ if(v!=null)setState(()=>_dir=v); }),
-          RadioListTile<String>(title: const Text('/storage/emulated/0/Download'), value: 'download', groupValue: _dir, onChanged: (v){ if(v!=null)setState(()=>_dir=v); }),
+          RadioGroup<String>(
+            groupValue: _dir,
+            onChanged: (v) {
+              if (v != null) setState(() => _dir = v);
+            },
+            child: const Column(
+              children: [
+                RadioListTile<String>(title: Text('根目录 app/mmlu（data目录中的app文件夹）'), value: 'root_app'),
+                RadioListTile<String>(title: Text('/storage/emulated/0/Download'), value: 'download'),
+              ],
+            ),
+          ),
           const Divider(),
           SwitchListTile(title: const Text('下载文件超过12小时后自动删除'), value: _auto, onChanged: (v)=>setState(()=>_auto=v)),
           const Divider(),
