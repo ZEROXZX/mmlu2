@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/auth/auth_store.dart';
 import '../../core/network/auth_api.dart';
-import 'old_login_page.dart';
+import 'net_settings_entry_page.dart';
 import 'home_shell.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -45,7 +45,7 @@ class _RegisterPageState extends State<RegisterPage> {
       appBar: AppBar(
         title: const Text('注册'),
         actions: [
-          IconButton(icon: const Icon(Icons.account_circle_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OldLoginPage())), tooltip: '原账号登录'),
+          IconButton(icon: const Icon(Icons.account_circle_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NetSettingsEntryPage())), tooltip: '网络设置'),
         ],
       ),
       body: Padding(
@@ -57,7 +57,7 @@ class _RegisterPageState extends State<RegisterPage> {
             TextField(controller: _p, decoration: const InputDecoration(labelText: '密码'), obscureText: true),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _loading?null:_reg, child: Text(_loading?'注册中...':'注册')),
-            TextButton(onPressed: ()=>Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OldLoginPage())), child: const Text('已有账号？去登录')),
+            TextButton(onPressed: ()=>Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NetSettingsEntryPage())), child: const Text('已有账号？去登录')),
           ],
         ),
       ),
