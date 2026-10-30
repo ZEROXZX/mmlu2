@@ -1,101 +1,54 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../app/app_container.dart';
-import '../../core/network/api_exception.dart';
+import '../../core/auth/auth_store.dart';
+import '../../core/network/auth_api.dart';
+import 'home_shell.dart';
 
-/// 官方账号登录页（内容接口需登录，游客 token 会 495 unidentify）。
-///
-/// 由「账号」页进入；登录成功后 `pop(true)`，由调用方刷新。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
-
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _phone = TextEditingController();
-  final _pwd = TextEditingController();
-  static const String _cc = '86';
-  bool _busy = false;
-  String? _err;
-
-  @override
-  void dispose() {
-    _phone.dispose();
-    _pwd.dispose();
-    super.dispose();
-  }
+  final _u = TextEditingController();
+  final _p = TextEditingController();
+  bool _loading = false;
 
   Future<void> _login() async {
-    final c = context.read<AppContainer>();
-    setState(() {
-      _busy = true;
-      _err = null;
-    });
+    if (_loading) return;
+    setState(() => _loading = true);
     try {
-      await c.memberRepo.login(
-        phone: _phone.text.trim(),
-        password: _pwd.text,
-        countryCodes: _cc,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
+      final prefs = await SharedPreferences.getInstance();
+      final store = AuthStore(prefs);
+      final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 15)));
+      final api = AuthApi(dio, 'http://127.0.0.1:8090');
+      final r = await api.login(username: _u.text.trim(), password: _p.text);
+      final token = r['token'];
+      final user = r['user'];
+      await store.save(token: token, user: Map<String,dynamic>.from(user), tv: user['token_version'] ?? 1);
+      if (mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeShell()), (r)=>false);
     } catch (e) {
-      final msg = e is ApiException
-          ? extractApiMessage(e.body, fallback: e.message)
-          : '$e';
-      if (mounted) setState(() => _err = msg);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('登录 官方账号')),
+      appBar: AppBar(title: const Text('登录')),
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _phone,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: '手机号',
-                prefixText: '+$_cc ',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _pwd,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '密码',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _busy ? null : _login,
-              child: _busy
-                  ? const SizedBox(
-                      width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('登录'),
-            ),
-            if (_err != null) ...[
-              const SizedBox(height: 12),
-              Text(_err!, style: const TextStyle(color: Colors.red)),
-            ],
-            const Spacer(),
-            const Text(
-              '提示：内容接口需登录官方账号；游客 token 访问内容会返回 495。',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
+            TextField(controller: _u, decoration: const InputDecoration(labelText: '用户名')),
+            TextField(controller: _p, decoration: const InputDecoration(labelText: '密码'), obscureText: true),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _loading?null:_login, child: Text(_loading?'登录中...':'登录')),
           ],
         ),
       ),
